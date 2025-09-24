@@ -6,6 +6,8 @@ import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
 import { Eye, EyeOff, PenTool } from 'lucide-react';
+import { auth } from '../firebase'; // Adjust the path and filename to match your actual Firebase config file
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 
 export function AuthForm() {
   const [showPassword, setShowPassword] = useState(false);
@@ -15,15 +17,29 @@ export function AuthForm() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => setIsLoading(false), 1500);
+    const email = (e.currentTarget as any).email.value;
+    const password = (e.currentTarget as any).password.value;
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      console.error("Login failed:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => setIsLoading(false), 1500);
+    const email = (e.currentTarget as any).signupEmail.value;
+    const password = (e.currentTarget as any).signupPassword.value;
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      console.error("Signup failed:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
