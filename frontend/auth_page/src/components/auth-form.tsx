@@ -8,12 +8,16 @@ import { Separator } from './ui/separator';
 import { Eye, EyeOff, PenTool } from 'lucide-react';
 import { auth } from '../firebase'; // Adjust the path and filename to match your actual Firebase config file
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+//importing the following to implement the sign up features
+import { GoogleAuthProvider, signInWithPopup, sendEmailVerification, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
+
 
 export function AuthForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
+  const [message, setMessage] = useState<string>('');
+  
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -28,20 +32,74 @@ export function AuthForm() {
     }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    const email = (e.currentTarget as any).signupEmail.value;
-    const password = (e.currentTarget as any).signupPassword.value;
-    try {
-      await createUserWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-      console.error("Signup failed:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+//sign up logic via email
+const handleSignup = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setIsLoading(true);
+  setMessage('');
+  
+  const form = e.currentTarget as any;
+  const firstName = form.firstName.value;
+  const lastName = form.lastName.value;
+  const email = form.signupEmail.value;
+  const password = form.signupPassword.value;
+  const confirmPassword = form.confirmPassword.value;
 
+  if (password !== confirmPassword) {
+    setMessage('Passwords do not match');
+    setIsLoading(false);
+    return;
+  }
+
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    
+    // Update profile with name
+    await updateProfile(user, {
+      displayName: `${firstName} ${lastName}`
+    });
+    
+    // Send verification email
+    await sendEmailVerification(user);
+    
+    setMessage('Account created! Please check your email to verify your account.');
+  } catch (error: any) {
+    console.error("Signup failed:", error);
+    setMessage(error.message || 'Signup failed. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+//sign up logic via googleAuth
+const handleGoogleAuth = async () => {
+  const provider = new GoogleAuthProvider();
+  try {
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+  } catch (error) {
+    console.error("Google sign-in failed:", error);
+    if (error instanceof Error) {
+      setMessage(error.message || 'Google sign-in failed. Please try again.');
+    } else {
+      setMessage('Google sign-in failed. Please try again.');
+    }
+  }
+};
+
+//forgot password logic
+const handleForgotPassword = async (email: string) => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+    setMessage('Password reset email sent! Please check your inbox.');
+  } catch (error: any) {
+    console.error("Password reset failed:", error);
+    setMessage(error.message || 'Password reset failed. Please try again.');
+  }
+};
+
+//UI Logic
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader className="text-center pb-4">
@@ -116,11 +174,18 @@ export function AuthForm() {
                 <button
                   type="button"
                   className="text-sm text-primary hover:underline"
+                  onClick={() => {
+                    const emailInput = document.getElementById('email') as HTMLInputElement | null;
+                    if (emailInput) {
+                      handleForgotPassword(emailInput.value);
+                    } else {
+                      setMessage('Please enter your email above.');
+                    }
+                  }}
                 >
                   Forgot password?
                 </button>
               </div>
-              
               <Button
                 type="submit"
                 className="w-full"
@@ -140,7 +205,7 @@ export function AuthForm() {
             </div>
             
             <div className="space-y-3">
-              <Button variant="outline" className="w-full">
+              <Button variant="outline" className="w-full" onClick={handleGoogleAuth}>
                 <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
                   <path
                     fill="currentColor"
@@ -323,6 +388,11 @@ export function AuthForm() {
           </TabsContent>
         </Tabs>
       </CardContent>
+      {message && (
+  <p className={`text-center mt-4 ${message.includes('success') || message.includes('sent') ? 'text-green-500' : 'text-red-500'}`}>
+    {message}
+  </p>
+)}
     </Card>
   );
 }
