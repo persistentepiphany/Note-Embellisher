@@ -1,9 +1,12 @@
-import { Plus, Upload, Filter, Grid3x3, List, Search } from "lucide-react";
+import { Plus, Upload, Filter, Grid3x3, List, Search, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
 import { ProjectCard } from "./ProjectCard";
 import { FolderCard } from "./FolderCard";
 import { EmptyState } from "./EmptyState";
 import { Input } from "./ui/input";
+import { signOut } from "firebase/auth";
+import { auth } from "../firebase";
+import { useNavigate } from "react-router-dom";
 import {
   Select,
   SelectContent,
@@ -19,6 +22,21 @@ const sampleProjects: any[] = [];
 const sampleFolders: any[] = [];
 
 export function Dashboard() {
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      console.log("User signed out successfully");
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
+  const handleCreateNew = () => {
+    navigate('/note-submission');
+  };
+
   return (
     <main className="flex-1 overflow-auto">
       <div className="p-6">
@@ -32,11 +50,20 @@ export function Dashboard() {
           </div>
           
           <div className="flex items-center space-x-3">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleSignOut}
+              className="text-red-600 hover:text-red-700 hover:border-red-300"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign Out
+            </Button>
             <Button variant="outline" size="sm">
               <Upload className="w-4 h-4 mr-2" />
               Import
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={handleCreateNew}>
               <Plus className="w-4 h-4 mr-2" />
               Create New
             </Button>

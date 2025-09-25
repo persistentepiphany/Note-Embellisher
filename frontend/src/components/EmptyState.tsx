@@ -1,12 +1,24 @@
 import { Plus, Upload, FileText, FolderPlus } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
+import { useNavigate } from "react-router-dom";
 
 interface EmptyStateProps {
   type: "projects" | "folders" | "favorites" | "recent";
 }
 
 export function EmptyState({ type }: EmptyStateProps) {
+  const navigate = useNavigate();
+
+  const handlePrimaryAction = () => {
+    if (type === "projects" || type === "recent") {
+      navigate('/note-submission');
+    } else if (type === "favorites") {
+      navigate('/dashboard'); // Browse all projects goes to dashboard
+    }
+    // For folders type, we'll handle folder creation later
+  };
+
   const getEmptyStateContent = () => {
     switch (type) {
       case "projects":
@@ -61,7 +73,7 @@ export function EmptyState({ type }: EmptyStateProps) {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-3 w-full">
-            <Button className="flex-1">
+            <Button className="flex-1" onClick={handlePrimaryAction}>
               <Plus className="w-4 h-4 mr-2" />
               {content.primaryAction}
             </Button>
