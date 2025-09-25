@@ -13,9 +13,9 @@ app = FastAPI(title="Note Embellisher API", version="1.0.0")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Vite dev server
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=False,  # Set to False when using allow_origins=["*"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -99,11 +99,14 @@ async def process_note_background(note_id: int, settings):
     """
     Background task to process note with ChatGPT
     """
-    db = next(get_db())
+    from database import SessionLocal
+    db = SessionLocal()
+    db_note = None
     try:
         # Get the note from database
         db_note = db.query(Note).filter(Note.id == note_id).first()
         if not db_note:
+            print(f"Note {note_id} not found")
             return
         
         # Convert settings to ProcessingSettings object
@@ -124,13 +127,14 @@ async def process_note_background(note_id: int, settings):
         db_note.processed_content = processed_content
         db_note.status = ProcessingStatus.COMPLETED
         db.commit()
+        print(f"Successfully processed note {note_id}")
         
     except Exception as e:
         # Update status to error
+        print(f"Error processing note {note_id}: {str(e)}")
         if db_note:
             db_note.status = ProcessingStatus.ERROR
             db.commit()
-        print(f"Error processing note {note_id}: {str(e)}")
     finally:
         db.close()
 

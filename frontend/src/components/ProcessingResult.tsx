@@ -1,122 +1,158 @@
-import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { CheckCircle, Download, Share, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 
 interface ProcessingResultProps {
-  config: {
-    subject: string;
-    date: string;
-    flair: string;
-    title: string;
-    description: string;
-    processingOptions: {
-      summarize: boolean;
-      expand: boolean;
-      addHeaders: boolean;
-      addBulletPoints: boolean;
-    };
-  };
   originalNotes: string;
+  processedNotes: string;
   onStartOver: () => void;
 }
 
-export function ProcessingResult({ config, originalNotes, onStartOver }: ProcessingResultProps) {
-  // Mock processed content based on selected options
-  const generateProcessedContent = () => {
-    let content = originalNotes;
-    
-    if (config.processingOptions.addHeaders) {
-      content = `# ${config.title}\n\n## Overview\n${content}\n\n## Key Points\n\n## Summary`;
+export const ProcessingResult: React.FC<ProcessingResultProps> = ({
+  originalNotes,
+  processedNotes,
+  onStartOver,
+}) => {
+  const [showContent, setShowContent] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  useEffect(() => {
+    // Trigger the fade-in animation
+    const timer = setTimeout(() => setShowContent(true), 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
     }
-    
-    if (config.processingOptions.addBulletPoints) {
-      const sentences = content.split('.').filter(s => s.trim());
-      content = sentences.map(sentence => `• ${sentence.trim()}`).join('\n');
-    }
-    
-    if (config.processingOptions.summarize) {
-      content += '\n\n**Summary:** This appears to be comprehensive notes that have been organized and structured for better readability and understanding.';
-    }
-    
-    if (config.processingOptions.expand) {
-      content += '\n\n**Additional Context:** These notes have been expanded with relevant context and supporting information to provide a more complete understanding of the topic.';
-    }
-    
-    return content;
   };
 
-  const processedContent = generateProcessedContent();
-  const selectedOptions = Object.entries(config.processingOptions)
-    .filter(([_, value]) => value)
-    .map(([key, _]) => key);
+  const handleExportPDF = () => {
+    // Mock PDF export
+    alert('Exporting to PDF... (This would integrate with a PDF generation service)');
+  };
+
+  const handleExportWord = () => {
+    // Mock Word export
+    alert('Exporting to Word... (This would generate a .docx file)');
+  };
+
+  const handleConnectGoogleDrive = () => {
+    // Mock Google Drive connection
+    alert('Connecting to Google Drive... (This would integrate with Google Drive API)');
+  };
 
   return (
-    <Card className="w-full max-w-4xl mx-auto">
-      <CardHeader>
+    <div className="w-full mx-auto bg-white/80 backdrop-blur-sm border-green-200/50 border rounded-xl shadow-lg p-6">
+      <div className="mb-6">
         <div className="flex items-center gap-2 mb-2">
-          <CheckCircle className="w-5 h-5 text-green-500" />
-          <CardTitle>Notes Enhanced Successfully!</CardTitle>
+          <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+          </svg>
+          <h2 className="text-2xl font-bold text-gray-900">Notes Enhanced Successfully!</h2>
         </div>
-        <CardDescription>
+        <p className="text-gray-600">
           Your notes have been processed with the selected enhancements
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Note metadata */}
-        <div className="p-4 bg-muted rounded-lg space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{config.subject}</Badge>
-            <Badge variant="outline">{config.flair}</Badge>
-            {config.date && <Badge variant="outline">{new Date(config.date).toLocaleDateString()}</Badge>}
-          </div>
-          <div>
-            <h3 className="font-medium">{config.title}</h3>
-            <p className="text-sm text-muted-foreground">{config.description}</p>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            <span className="text-sm text-muted-foreground">Applied:</span>
-            {selectedOptions.map((option) => (
-              <Badge key={option} variant="outline" className="text-xs">
-                {option.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-              </Badge>
-            ))}
-          </div>
-        </div>
+        </p>
+      </div>
 
-        {/* Original vs Enhanced */}
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <h4 className="font-medium">Original Notes</h4>
-            <div className="p-4 bg-gray-50 rounded-lg max-h-64 overflow-y-auto">
-              <pre className="whitespace-pre-wrap text-sm">{originalNotes}</pre>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h4 className="font-medium">Enhanced Notes</h4>
-            <div className="p-4 bg-green-50 rounded-lg max-h-64 overflow-y-auto">
-              <pre className="whitespace-pre-wrap text-sm">{processedContent}</pre>
-            </div>
+      {/* Original vs Enhanced */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="space-y-3">
+          <h3 className="text-lg font-medium text-slate-700">Original Notes</h3>
+          <div className="p-4 bg-slate-50 rounded-lg max-h-80 overflow-y-auto border border-slate-200">
+            <pre className="whitespace-pre-wrap text-sm text-slate-600">{originalNotes}</pre>
           </div>
         </div>
+        <div className="space-y-3">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-medium text-green-800">Enhanced Notes</h3>
+            <button
+              onClick={() => copyToClipboard(processedNotes)}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 ${
+                copySuccess 
+                  ? 'bg-green-100 text-green-700' 
+                  : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+              }`}
+            >
+              {copySuccess ? '✓ Copied!' : 'Copy'}
+            </button>
+          </div>
+          <div 
+            className={`p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg max-h-80 overflow-y-auto border border-green-200 transition-all duration-1000 ${
+              showContent 
+                ? 'opacity-100 blur-none transform translate-y-0' 
+                : 'opacity-0 blur-sm transform translate-y-2'
+            }`}
+          >
+            <pre className="whitespace-pre-wrap text-sm text-green-800">{processedNotes}</pre>
+          </div>
+        </div>
+      </div>
 
-        {/* Action buttons */}
-        <div className="flex flex-wrap gap-3 pt-4">
-          <Button>
-            <Download className="w-4 h-4 mr-2" />
-            Download
-          </Button>
-          <Button variant="outline">
-            <Share className="w-4 h-4 mr-2" />
-            Share
-          </Button>
-          <Button variant="outline" onClick={onStartOver}>
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Start Over
-          </Button>
+      {/* Export Options */}
+      <div className="space-y-4 mb-6">
+        <h4 className="text-lg font-medium text-slate-700">Export & Share Options</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <button 
+            onClick={handleExportPDF} 
+            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Export to PDF</span>
+          </button>
+          <button 
+            onClick={handleExportWord}
+            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Export to Word</span>
+          </button>
+          <button 
+            onClick={handleConnectGoogleDrive}
+            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 12l2 2 4-4" />
+            </svg>
+            <span>Save to Drive</span>
+          </button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-3 pt-4 border-t border-green-200 justify-between">
+        <div className="flex gap-3">
+          <button className="border border-orange-200 text-orange-700 hover:bg-orange-50 px-4 py-2 rounded-lg transition-colors duration-200 flex items-center space-x-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>Download All</span>
+          </button>
+          <button className="border border-amber-200 text-amber-700 hover:bg-amber-50 px-4 py-2 rounded-lg transition-colors duration-200 flex items-center space-x-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
+            </svg>
+            <span>Share Link</span>
+          </button>
+        </div>
+        <button 
+          onClick={onStartOver}
+          className="border border-slate-200 text-slate-700 hover:bg-slate-50 px-6 py-2 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>Start Over</span>
+        </button>
+      </div>
+    </div>
   );
-}
+};

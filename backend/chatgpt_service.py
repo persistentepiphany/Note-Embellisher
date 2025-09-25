@@ -1,6 +1,6 @@
 import os
 from typing import Dict, Any, Optional
-import openai
+from openai import OpenAI
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -25,7 +25,7 @@ class ChatGPTService:
         if not self.api_key:
             raise ValueError("OpenAI API key not found. Please add OPENAI_API_KEY to your .env file.")
         
-        openai.api_key = self.api_key
+        self.client = OpenAI(api_key=self.api_key)
     
     async def process_text_with_chatgpt(self, text: str, settings: ProcessingSettings) -> str:
         """
@@ -34,7 +34,7 @@ class ChatGPTService:
         try:
             prompt = self._generate_prompt(text, settings)
             
-            response = await openai.ChatCompletion.acreate(
+            response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {
@@ -73,10 +73,6 @@ class ChatGPTService:
         
         if settings.summarize:
             instructions.append("Provide a concise summary of the main points while maintaining key information")
-        
-        if not instructions:
-            instructions.append("Improve the clarity and readability of the text")
-        
         prompt = f"""
 Please process the following text according to these instructions:
 {chr(10).join(f"- {instruction}" for instruction in instructions)}
