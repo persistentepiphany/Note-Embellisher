@@ -95,6 +95,20 @@ async def get_notes(skip: int = 0, limit: int = 100, db: Session = Depends(get_d
         for note in notes
     ]
 
+@app.delete("/notes/{note_id}")
+async def delete_note(note_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a specific note by ID
+    """
+    db_note = db.query(Note).filter(Note.id == note_id).first()
+    if not db_note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    
+    db.delete(db_note)
+    db.commit()
+    
+    return {"message": "Note deleted successfully"}
+
 async def process_note_background(note_id: int, settings):
     """
     Background task to process note with ChatGPT

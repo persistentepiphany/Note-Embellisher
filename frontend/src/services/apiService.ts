@@ -59,6 +59,44 @@ export const getNoteById = async (noteId: number): Promise<NoteResponse> => {
   }
 };
 
+export const getAllNotes = async (): Promise<NoteResponse[]> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/notes/`);
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch notes');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching notes:', error);
+    throw error;
+  }
+};
+
+export const deleteNote = async (noteId: number): Promise<void> => {
+  try {
+    console.log('API: Attempting to delete note:', noteId);
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+      method: 'DELETE',
+    });
+
+    console.log('API: Delete response status:', response.status);
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('API: Delete failed with error:', error);
+      throw new Error(error.detail || 'Failed to delete note');
+    }
+    
+    console.log('API: Note deleted successfully');
+  } catch (error) {
+    console.error('Error deleting note:', error);
+    throw error;
+  }
+};
+
 export const pollNoteStatus = async (
   noteId: number, 
   onUpdate: (note: NoteResponse) => void,

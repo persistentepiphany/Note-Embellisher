@@ -189,3 +189,77 @@
 html {
   font-size: var(--font-size);
 }
+
+/* Custom styles for formatted content */
+.formatted-content {
+  @apply leading-relaxed;
+}
+
+.formatted-content h1,
+.formatted-content h2,
+.formatted-content h3,
+.formatted-content h4 {
+  @apply font-medium;
+}
+
+.formatted-content h1 {
+  @apply text-xl border-b-2 border-gray-200 pb-2 mb-4 mt-6;
+}
+
+.formatted-content h2 {
+  @apply text-lg mb-3 mt-5;
+}
+
+.formatted-content h3 {
+  @apply text-base mb-2 mt-4;
+}
+
+.formatted-content h4 {
+  @apply text-sm mb-2 mt-3;
+}
+
+.formatted-content p {
+  @apply mb-3;
+}
+
+.formatted-content hr {
+  @apply my-4;
+}
+
+.formatted-content strong {
+  @apply font-semibold;
+}
+
+.formatted-content em {
+  @apply italic;
+}
+
+.formatted-content code {
+  @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono;
+}
+
+/* Bullet point styles */
+.formatted-content .bullet-item {
+  @apply flex items-start mb-2;
+}
+
+.formatted-content .bullet-item .bullet {
+  @apply text-green-600 mr-2 mt-1 flex-shrink-0;
+}
+
+.formatted-content .sub-bullet-item {
+  @apply flex items-start mb-1 ml-4;
+}
+
+.formatted-content .sub-bullet-item .bullet {
+  @apply text-green-500 mr-2 mt-1 flex-shrink-0;
+}
+
+/* Numbered list styles */
+.formatted-content .numbered-item {
+  @apply flex items-start mb-2;
+}
+
+.formatted-content .numbered-item .number {
+  @apply text-blue-600 font-medium mr-2 mt-0 flex-shrink-0;
+}

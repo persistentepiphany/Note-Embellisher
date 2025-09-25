@@ -1,4 +1,4 @@
-import { Plus, Upload, Filter, Grid3x3, List, Search, LogOut } from "lucide-react";
+import { Plus, Upload, Filter, Grid3x3, List, Search, LogOut, FileText, Calendar, Clock } from "lucide-react";
 import { Button } from "./ui/button";
 import { ProjectCard } from "./ProjectCard";
 import { FolderCard } from "./FolderCard";
@@ -7,6 +7,10 @@ import { Input } from "./ui/input";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { getAllNotes, NoteResponse, deleteNote } from "../services/apiService";
+import { downloadTextFile, exportToPDF } from "../utils/exportUtils";
+import { NoteCard } from "./NoteCard";
 import {
   Select,
   SelectContent,
@@ -23,6 +27,9 @@ const sampleFolders: any[] = [];
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const [notes, setNotes] = useState<NoteResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     try {
@@ -35,6 +42,53 @@ export function Dashboard() {
 
   const handleCreateNew = () => {
     navigate('/note-submission');
+  };
+
+  const fetchNotes = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const fetchedNotes = await getAllNotes();
+      setNotes(fetchedNotes);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load notes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotes();
+  }, []);
+
+
+
+  const handleDownloadNote = (note: NoteResponse) => {
+    const content = note.processed_content || note.text;
+    const filename = `note_${note.id}_${new Date(note.created_at).toISOString().split('T')[0]}.txt`;
+    downloadTextFile(content, filename);
+  };
+
+  const handleExportNotePDF = async (note: NoteResponse) => {
+    try {
+      const content = note.processed_content || note.text;
+      const title = `Note #${note.id}`;
+      await exportToPDF(content, title);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to export PDF');
+    }
+  };
+
+  const handleDeleteNote = async (noteId: number) => {
+    try {
+      console.log('Deleting note with ID:', noteId);
+      await deleteNote(noteId);
+      console.log('Note deleted successfully');
+      await fetchNotes(); // Refresh the notes list
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      setError(error instanceof Error ? error.message : 'Failed to delete note');
+    }
   };
 
   return (
@@ -76,11 +130,11 @@ export function Dashboard() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Projects</p>
-                  <p className="text-2xl font-medium">{sampleProjects.length}</p>
+                  <p className="text-sm text-muted-foreground">Total Notes</p>
+                  <p className="text-2xl font-medium">{notes.length}</p>
                 </div>
                 <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Grid3x3 className="w-4 h-4 text-blue-600" />
+                  <FileText className="w-4 h-4 text-blue-600" />
                 </div>
               </div>
             </CardContent>
@@ -90,25 +144,11 @@ export function Dashboard() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Favorites</p>
-                  <p className="text-2xl font-medium">{sampleProjects.filter(p => p.isFavorite).length}</p>
-                </div>
-                <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <Search className="w-4 h-4 text-yellow-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Pages</p>
-                  <p className="text-2xl font-medium">{sampleProjects.reduce((acc, p) => acc + p.pageCount, 0)}</p>
+                  <p className="text-sm text-muted-foreground">Completed</p>
+                  <p className="text-2xl font-medium">{notes.filter(n => n.status === 'completed').length}</p>
                 </div>
                 <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                  <List className="w-4 h-4 text-green-600" />
+                  <Search className="w-4 h-4 text-green-600" />
                 </div>
               </div>
             </CardContent>
@@ -118,11 +158,29 @@ export function Dashboard() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Folders</p>
-                  <p className="text-2xl font-medium">{sampleFolders.length}</p>
+                  <p className="text-sm text-muted-foreground">Processing</p>
+                  <p className="text-2xl font-medium">{notes.filter(n => n.status === 'processing').length}</p>
+                </div>
+                <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-yellow-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Recent</p>
+                  <p className="text-2xl font-medium">{notes.filter(n => {
+                    const dayAgo = new Date();
+                    dayAgo.setDate(dayAgo.getDate() - 1);
+                    return new Date(n.created_at) > dayAgo;
+                  }).length}</p>
                 </div>
                 <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <Filter className="w-4 h-4 text-purple-600" />
+                  <Calendar className="w-4 h-4 text-purple-600" />
                 </div>
               </div>
             </CardContent>
@@ -135,27 +193,28 @@ export function Dashboard() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder="Search projects..."
+                placeholder="Search notes..."
                 className="pl-10 w-80 bg-input-background border-0"
               />
             </div>
             <Select defaultValue="all">
               <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by category" />
+                <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="research">Research</SelectItem>
-                <SelectItem value="business">Business</SelectItem>
-                <SelectItem value="education">Education</SelectItem>
-                <SelectItem value="personal">Personal</SelectItem>
-                <SelectItem value="lifestyle">Lifestyle</SelectItem>
-                <SelectItem value="health">Health</SelectItem>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="error">Error</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={fetchNotes}>
+              <Upload className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
             <Button variant="outline" size="sm">
               <Grid3x3 className="w-4 h-4" />
             </Button>
@@ -165,63 +224,124 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Projects Section */}
-        <Tabs defaultValue="all" className="w-full">
-          <TabsList className="mb-6">
-            <TabsTrigger value="all">All Projects</TabsTrigger>
-            <TabsTrigger value="recent">Recent</TabsTrigger>
-            <TabsTrigger value="favorites">Favorites</TabsTrigger>
-            <TabsTrigger value="folders">View Folders</TabsTrigger>
-          </TabsList>
+        {/* Notes Section */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="relative">
+              <div className="w-8 h-8 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin"></div>
+            </div>
+            <span className="ml-3 text-gray-600">Loading notes...</span>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <p className="text-red-700">{error}</p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={fetchNotes}
+              className="mt-2"
+            >
+              Try Again
+            </Button>
+          </div>
+        ) : (
+          <Tabs defaultValue="all" className="w-full">
+            <TabsList className="mb-6">
+              <TabsTrigger value="all">All Notes</TabsTrigger>
+              <TabsTrigger value="recent">Recent</TabsTrigger>
+              <TabsTrigger value="completed">Completed</TabsTrigger>
+              <TabsTrigger value="processing">Processing</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="all">
-            {sampleProjects.length === 0 ? (
-              <EmptyState type="projects" />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sampleProjects.map((project) => (
-                  <ProjectCard key={project.id} {...project} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
+            <TabsContent value="all">
+              {notes.length === 0 ? (
+                <EmptyState type="projects" />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {notes.map((note) => (
+                    <NoteCard
+                      key={note.id}
+                      note={note}
+                      onDownload={handleDownloadNote}
+                      onExportPDF={handleExportNotePDF}
+                      onDelete={handleDeleteNote}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          <TabsContent value="recent">
-            {sampleProjects.length === 0 ? (
-              <EmptyState type="recent" />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sampleProjects.slice(0, 1).map((project) => (
-                  <ProjectCard key={project.id} {...project} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
+            <TabsContent value="recent">
+              {notes.filter(n => {
+                const dayAgo = new Date();
+                dayAgo.setDate(dayAgo.getDate() - 1);
+                return new Date(n.created_at) > dayAgo;
+              }).length === 0 ? (
+                <EmptyState type="recent" />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {notes.filter(n => {
+                    const dayAgo = new Date();
+                    dayAgo.setDate(dayAgo.getDate() - 1);
+                    return new Date(n.created_at) > dayAgo;
+                  }).map((note) => (
+                    <NoteCard
+                      key={note.id}
+                      note={note}
+                      onDownload={handleDownloadNote}
+                      onExportPDF={handleExportNotePDF}
+                      onDelete={handleDeleteNote}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          <TabsContent value="favorites">
-            {sampleProjects.filter(p => p.isFavorite).length === 0 ? (
-              <EmptyState type="favorites" />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sampleProjects.filter(p => p.isFavorite).map((project) => (
-                  <ProjectCard key={project.id} {...project} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
+            <TabsContent value="completed">
+              {notes.filter(n => n.status === 'completed').length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-600 mb-2">No completed notes yet</h3>
+                  <p className="text-gray-500 mb-4">Your processed notes will appear here once they're ready.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {notes.filter(n => n.status === 'completed').map((note) => (
+                    <NoteCard
+                      key={note.id}
+                      note={note}
+                      onDownload={handleDownloadNote}
+                      onExportPDF={handleExportNotePDF}
+                      onDelete={handleDeleteNote}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
 
-          <TabsContent value="folders">
-            {sampleFolders.length === 0 ? (
-              <EmptyState type="folders" />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sampleFolders.map((folder) => (
-                  <FolderCard key={folder.id} {...folder} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="processing">
+              {notes.filter(n => n.status === 'processing').length === 0 ? (
+                <div className="text-center py-12">
+                  <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-600 mb-2">No notes processing</h3>
+                  <p className="text-gray-500 mb-4">Notes being processed will appear here.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {notes.filter(n => n.status === 'processing').map((note) => (
+                    <NoteCard
+                      key={note.id}
+                      note={note}
+                      onDownload={handleDownloadNote}
+                      onExportPDF={handleExportNotePDF}
+                      onDelete={handleDeleteNote}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
       </div>
     </main>
   );

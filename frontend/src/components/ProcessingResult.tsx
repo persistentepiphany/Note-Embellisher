@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { exportToPDF, exportToWord, downloadTextFile } from '../utils/exportUtils';
+import { FormattedContent } from './FormattedContent';
 
 interface ProcessingResultProps {
   originalNotes: string;
@@ -11,6 +14,7 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
   processedNotes,
   onStartOver,
 }) => {
+  const navigate = useNavigate();
   const [showContent, setShowContent] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
 
@@ -30,19 +34,46 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
     }
   };
 
-  const handleExportPDF = () => {
-    // Mock PDF export
-    alert('Exporting to PDF... (This would integrate with a PDF generation service)');
+  const handleExportPDF = async () => {
+    try {
+      await exportToPDF(processedNotes, 'Enhanced Notes');
+    } catch (error) {
+      alert(`Error exporting PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   const handleExportWord = () => {
-    // Mock Word export
-    alert('Exporting to Word... (This would generate a .docx file)');
+    try {
+      exportToWord(processedNotes, 'Enhanced Notes');
+    } catch (error) {
+      alert(`Error exporting Word document: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleDownloadText = () => {
+    try {
+      downloadTextFile(processedNotes, 'enhanced_notes.txt');
+    } catch (error) {
+      alert(`Error downloading file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleDownloadAll = () => {
+    try {
+      const combinedContent = `ORIGINAL NOTES:\n\n${originalNotes}\n\n${'='.repeat(50)}\n\nENHANCED NOTES:\n\n${processedNotes}`;
+      downloadTextFile(combinedContent, 'all_notes.txt');
+    } catch (error) {
+      alert(`Error downloading file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   const handleConnectGoogleDrive = () => {
     // Mock Google Drive connection
     alert('Connecting to Google Drive... (This would integrate with Google Drive API)');
+  };
+
+  const handleBackToDashboard = () => {
+    navigate('/dashboard');
   };
 
   return (
@@ -82,13 +113,16 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
             </button>
           </div>
           <div 
-            className={`p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg max-h-80 overflow-y-auto border border-green-200 transition-all duration-1000 ${
+            className={`p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg max-h-96 overflow-y-auto border border-green-200 transition-all duration-1000 ${
               showContent 
                 ? 'opacity-100 blur-none transform translate-y-0' 
                 : 'opacity-0 blur-sm transform translate-y-2'
             }`}
           >
-            <pre className="whitespace-pre-wrap text-sm text-green-800">{processedNotes}</pre>
+            <FormattedContent 
+              content={processedNotes} 
+              className="text-green-800"
+            />
           </div>
         </div>
       </div>
@@ -96,7 +130,16 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
       {/* Export Options */}
       <div className="space-y-4 mb-6">
         <h4 className="text-lg font-medium text-slate-700">Export & Share Options</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <button 
+            onClick={handleDownloadText} 
+            className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Download TXT</span>
+          </button>
           <button 
             onClick={handleExportPDF} 
             className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
@@ -130,7 +173,10 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
       {/* Action buttons */}
       <div className="flex flex-wrap gap-3 pt-4 border-t border-green-200 justify-between">
         <div className="flex gap-3">
-          <button className="border border-orange-200 text-orange-700 hover:bg-orange-50 px-4 py-2 rounded-lg transition-colors duration-200 flex items-center space-x-2">
+          <button 
+            onClick={handleDownloadAll}
+            className="border border-orange-200 text-orange-700 hover:bg-orange-50 px-4 py-2 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
@@ -143,15 +189,27 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
             <span>Share Link</span>
           </button>
         </div>
-        <button 
-          onClick={onStartOver}
-          className="border border-slate-200 text-slate-700 hover:bg-slate-50 px-6 py-2 rounded-lg transition-colors duration-200 flex items-center space-x-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          <span>Start Over</span>
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={handleBackToDashboard}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3a2 2 0 012-2h4a2 2 0 012 2v4m-6 0V3" />
+            </svg>
+            <span>Back to Dashboard</span>
+          </button>
+          <button 
+            onClick={onStartOver}
+            className="border border-slate-200 text-slate-700 hover:bg-slate-50 px-6 py-2 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>Start Over</span>
+          </button>
+        </div>
       </div>
     </div>
   );
