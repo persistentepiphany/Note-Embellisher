@@ -9,6 +9,7 @@ import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { getAllNotes, NoteResponse, deleteNote } from "../services/apiService";
+import { useAuth } from "../context/AuthContext";
 import { downloadTextFile, exportToPDF } from "../utils/exportUtils";
 import { NoteCard } from "./NoteCard";
 import {
@@ -27,9 +28,11 @@ const sampleFolders: any[] = [];
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const { currentUser, loading: authLoading } = useAuth();
   const [notes, setNotes] = useState<NoteResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasFetched, setHasFetched] = useState(false);
 
   const handleSignOut = async () => {
     try {
@@ -45,21 +48,43 @@ export function Dashboard() {
   };
 
   const fetchNotes = async () => {
+    if (hasFetched && loading) return; // Prevent duplicate fetches
+    
     try {
       setLoading(true);
       setError(null);
+      console.log('Fetching notes...');
       const fetchedNotes = await getAllNotes();
-      setNotes(fetchedNotes);
+      console.log('Notes fetched:', fetchedNotes);
+      setNotes(Array.isArray(fetchedNotes) ? fetchedNotes : []);
+      setHasFetched(true);
     } catch (err) {
+      console.error('Error fetching notes:', err);
       setError(err instanceof Error ? err.message : 'Failed to load notes');
+      setNotes([]); // Set empty array on error to prevent infinite loading
+      setHasFetched(true);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchNotes();
-  }, []);
+    let isMounted = true; // Prevent state update if component unmounts
+    
+    if (!authLoading && currentUser && !hasFetched) {
+      console.log('User authenticated, fetching notes for:', currentUser.email);
+      fetchNotes().then(() => {
+        if (!isMounted) return; // Don't update state if component unmounted
+      });
+    } else if (!authLoading && !currentUser) {
+      console.log('User not authenticated, redirecting to login');
+      navigate('/');
+    }
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [authLoading, currentUser, navigate, hasFetched]);
 
 
 
@@ -79,11 +104,12 @@ export function Dashboard() {
     }
   };
 
-  const handleDeleteNote = async (noteId: number) => {
+  const handleDeleteNote = async (noteId: string) => {
     try {
       console.log('Deleting note with ID:', noteId);
       await deleteNote(noteId);
       console.log('Note deleted successfully');
+      setHasFetched(false); // Reset fetch flag
       await fetchNotes(); // Refresh the notes list
     } catch (error) {
       console.error('Error deleting note:', error);
@@ -211,7 +237,10 @@ export function Dashboard() {
           </div>
 
           <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm" onClick={fetchNotes}>
+            <Button variant="outline" size="sm" onClick={() => {
+              setHasFetched(false);
+              fetchNotes();
+            }}>
               <Upload className="w-4 h-4 mr-2" />
               Refresh
             </Button>

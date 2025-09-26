@@ -20,7 +20,7 @@ class NoteCreate(BaseModel):
     settings: ProcessingSettingsSchema
 
 class NoteResponse(BaseModel):
-    id: int
+    id: str  # Changed from int to str for Firestore document IDs
     text: str
     settings: ProcessingSettingsSchema
     processed_content: Optional[str] = None

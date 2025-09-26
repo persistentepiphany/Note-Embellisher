@@ -10,7 +10,7 @@ interface NoteCardProps {
   note: NoteResponse;
   onDownload: (note: NoteResponse) => void;
   onExportPDF: (note: NoteResponse) => void;
-  onDelete: (noteId: number) => void;
+  onDelete: (noteId: string) => void;
 }
 
 export const NoteCard: React.FC<NoteCardProps> = ({
