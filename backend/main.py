@@ -334,6 +334,10 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         if not extracted_text.strip():
             raise Exception("No text could be extracted from the image")
         
+        # Check if OCR failed and returned a fallback message
+        if "[OCR Processing Required]" in extracted_text:
+            raise Exception("OCR processing failed: Tesseract OCR is not installed or not available")
+        
         # Update note with extracted text
         db_note.text = extracted_text
         db.commit()
@@ -347,6 +351,8 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
             expand=settings.expand,
             summarize=settings.summarize
         )
+        
+
         
         # Process with ChatGPT
         processed_content = await chatgpt_service.process_text_with_chatgpt(

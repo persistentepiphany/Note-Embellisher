@@ -105,8 +105,8 @@ class OCRService:
                 
             except Exception as ocr_error:
                 print(f"OCR not available or failed: {str(ocr_error)}")
-                # Fallback: return a placeholder message indicating OCR is needed
-                return f"[OCR Processing Required] Image uploaded successfully. Please install Tesseract OCR to extract text from images. File: {os.path.basename(image_path)}"
+                # Raise an exception instead of returning a fallback message
+                raise Exception("Tesseract OCR is not installed or not available. Please install Tesseract to extract text from images.")
         
         except Exception as e:
             print(f"Error in image OCR: {str(e)}")

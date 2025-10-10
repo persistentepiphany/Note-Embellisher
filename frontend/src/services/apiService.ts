@@ -40,6 +40,8 @@ export interface NoteResponse {
   settings: ProcessingSettings;
   processed_content: string | null;
   status: 'pending' | 'processing' | 'completed' | 'error';
+  progress: number; // 0-100
+  progress_message: string | null;
   // Image-related fields
   image_url?: string | null;
   image_filename?: string | null;
@@ -175,7 +177,7 @@ export const uploadImageNote = async (
 export const pollNoteStatus = async (
   noteId: number, 
   onUpdate: (note: NoteResponse) => void,
-  maxAttempts: number = 30
+  maxAttempts: number = 60 // Increased for longer processing times
 ): Promise<NoteResponse> => {
   let attempts = 0;
   
@@ -196,8 +198,8 @@ export const pollNoteStatus = async (
           return;
         }
         
-        // Poll every 2 seconds
-        setTimeout(poll, 2000);
+        // Poll every 1 second for better progress updates
+        setTimeout(poll, 1000);
       } catch (error) {
         reject(error);
       }
