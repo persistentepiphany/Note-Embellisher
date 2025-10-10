@@ -3,11 +3,31 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
 import json
+from fastapi.security import OAuth2PasswordBearer
+from firebase_admin import auth
 
 from database import get_db, Note
 from schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus
 from chatgpt_service import chatgpt_service, ProcessingSettings
 import firebasesdk  # Initialize Firebase
+
+# ----- firebase-fix: Add authentication dependency -----
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    """
+    Verifies Firebase ID token and returns user data.
+    """
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except auth.InvalidIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid ID token")
+    except auth.ExpiredIdTokenError:
+        raise HTTPException(status_code=401, detail="Expired ID token")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+# ----------------------------------------------------
 
 app = FastAPI(title="Note Embellisher API", version="1.0.0")
 
@@ -28,13 +48,15 @@ async def root():
 async def create_note(
     note: NoteCreate, 
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)  # firebase-fix: Protect endpoint
 ):
     """
     Create a new note and start processing it in the background
     """
     # Create note in database
     db_note = Note(
+        user_id=user["uid"],  # firebase-fix: Link note to user
         text=note.text,
         settings_json=json.dumps(note.settings.dict()),
         status=ProcessingStatus.PROCESSING
@@ -58,11 +80,16 @@ async def create_note(
     )
 
 @app.get("/notes/{note_id}", response_model=NoteResponse)
-async def get_note(note_id: int, db: Session = Depends(get_db)):
+async def get_note(
+    note_id: int, 
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)  # firebase-fix: Protect endpoint
+):
     """
     Get a specific note by ID
     """
-    db_note = db.query(Note).filter(Note.id == note_id).first()
+    # firebase-fix: Filter by user_id
+    db_note = db.query(Note).filter(Note.id == note_id, Note.user_id == user["uid"]).first()
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
@@ -77,11 +104,17 @@ async def get_note(note_id: int, db: Session = Depends(get_db)):
     )
 
 @app.get("/notes/", response_model=List[NoteResponse])
-async def get_notes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+async def get_notes(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)  # firebase-fix: Protect endpoint
+):
     """
     Get all notes with pagination
     """
-    notes = db.query(Note).offset(skip).limit(limit).all()
+    # firebase-fix: Filter by user_id
+    notes = db.query(Note).filter(Note.user_id == user["uid"]).offset(skip).limit(limit).all()
     
     return [
         NoteResponse(
@@ -97,11 +130,16 @@ async def get_notes(skip: int = 0, limit: int = 100, db: Session = Depends(get_d
     ]
 
 @app.delete("/notes/{note_id}")
-async def delete_note(note_id: int, db: Session = Depends(get_db)):
+async def delete_note(
+    note_id: int, 
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)  # firebase-fix: Protect endpoint
+):
     """
     Delete a specific note by ID
     """
-    db_note = db.query(Note).filter(Note.id == note_id).first()
+    # firebase-fix: Filter by user_id
+    db_note = db.query(Note).filter(Note.id == note_id, Note.user_id == user["uid"]).first()
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     

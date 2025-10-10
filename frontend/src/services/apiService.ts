@@ -1,4 +1,26 @@
+import { getAuth } from "firebase/auth";
+
 const API_BASE_URL = 'http://localhost:8000';
+
+// ----- firebase-fix: Add authentication header helper -----
+const getAuthHeaders = async () => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+  const headers: { [key: string]: string } = {
+    'Content-Type': 'application/json',
+  };
+
+  if (user) {
+    try {
+      const token = await user.getIdToken();
+      headers['Authorization'] = `Bearer ${token}`;
+    } catch (error) {
+      console.error("Error getting auth token:", error);
+    }
+  }
+  return headers;
+};
+// ----------------------------------------------------
 
 export interface ProcessingSettings {
   add_bullet_points: boolean;
@@ -23,11 +45,10 @@ export interface NoteResponse {
 
 export const createNote = async (noteData: NoteRequest): Promise<NoteResponse> => {
   try {
+    const headers = await getAuthHeaders(); // firebase-fix: Add auth header
     const response = await fetch(`${API_BASE_URL}/notes/`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: headers,
       body: JSON.stringify(noteData),
     });
 
@@ -45,7 +66,10 @@ export const createNote = async (noteData: NoteRequest): Promise<NoteResponse> =
 
 export const getNoteById = async (noteId: number): Promise<NoteResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/notes/${noteId}`);
+    const headers = await getAuthHeaders(); // firebase-fix: Add auth header
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+      headers: headers,
+    });
     
     if (!response.ok) {
       const error = await response.json();
@@ -61,7 +85,10 @@ export const getNoteById = async (noteId: number): Promise<NoteResponse> => {
 
 export const getAllNotes = async (): Promise<NoteResponse[]> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/notes/`);
+    const headers = await getAuthHeaders(); // firebase-fix: Add auth header
+    const response = await fetch(`${API_BASE_URL}/notes/`, {
+      headers: headers,
+    });
     
     if (!response.ok) {
       const error = await response.json();
@@ -78,8 +105,10 @@ export const getAllNotes = async (): Promise<NoteResponse[]> => {
 export const deleteNote = async (noteId: number): Promise<void> => {
   try {
     console.log('API: Attempting to delete note:', noteId);
+    const headers = await getAuthHeaders(); // firebase-fix: Add auth header
     const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
       method: 'DELETE',
+      headers: headers,
     });
 
     console.log('API: Delete response status:', response.status);
