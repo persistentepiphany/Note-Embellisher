@@ -36,11 +36,17 @@ export interface NoteRequest {
 
 export interface NoteResponse {
   id: number;
-  text: string;
+  text: string | null;
   settings: ProcessingSettings;
   processed_content: string | null;
   status: 'pending' | 'processing' | 'completed' | 'error';
+  // Image-related fields
+  image_url?: string | null;
+  image_filename?: string | null;
+  image_type?: string | null;
+  input_type: string;
   created_at: string;
+  updated_at?: string | null;
 }
 
 export const createNote = async (noteData: NoteRequest): Promise<NoteResponse> => {
@@ -122,6 +128,46 @@ export const deleteNote = async (noteId: number): Promise<void> => {
     console.log('API: Note deleted successfully');
   } catch (error) {
     console.error('Error deleting note:', error);
+    throw error;
+  }
+};
+
+export const uploadImageNote = async (
+  file: File,
+  settings: ProcessingSettings
+): Promise<NoteResponse> => {
+  try {
+    const auth = getAuth();
+    const user = auth.currentUser;
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    const token = await user.getIdToken();
+    
+    // Create FormData for file upload
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('settings', JSON.stringify(settings));
+
+    const response = await fetch(`${API_BASE_URL}/upload-image/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // Don't set Content-Type header - let browser set it with boundary for FormData
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to upload image');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error uploading image:', error);
     throw error;
   }
 };

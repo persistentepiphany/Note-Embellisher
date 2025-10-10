@@ -6,3 +6,8 @@ python-dotenv==1.0.0
 openai>=1.50.0
 python-multipart==0.0.6
 firebase-admin>=6.2.0
+pytesseract==0.3.10
+Pillow==10.1.0
+google-cloud-storage>=2.10.0
+PyMuPDF==1.23.5
+dropbox==11.36.2

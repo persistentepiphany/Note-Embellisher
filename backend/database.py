@@ -24,10 +24,15 @@ class Note(Base):
     # ----- firebase-fix: Add user_id to link notes to users -----
     user_id = Column(String, index=True, nullable=False)
     # ----------------------------------------------------------
-    text = Column(Text, nullable=False)
+    text = Column(Text, nullable=True)  # Made nullable since we might have image-only notes
     settings_json = Column(Text, nullable=False)  # Store settings as JSON string
     processed_content = Column(Text, nullable=True)
     status = Column(String(20), default="pending")
+    # Image-related fields
+    image_url = Column(String, nullable=True)  # Firebase Storage URL
+    image_filename = Column(String, nullable=True)  # Original filename
+    image_type = Column(String(10), nullable=True)  # 'image' or 'pdf'
+    input_type = Column(String(10), default="text")  # 'text' or 'image'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
