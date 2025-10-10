@@ -6,7 +6,7 @@ import { NoteConfigStep } from './NoteConfigStep';
 import { ProcessingResult } from './ProcessingResult';
 import { ErrorDisplay } from './ErrorDisplay';
 import { ProcessingConfig, defaultConfig } from '../types/config';
-import { createNote, pollNoteStatus, NoteResponse } from '../services/apiService';
+import { createNote, uploadImageNote, pollNoteStatus, NoteResponse } from '../services/apiService';
 import { Button } from './ui/button';
 
 type Step = 'upload' | 'config' | 'result';
@@ -16,6 +16,7 @@ export const NoteSubmission: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [notes, setNotes] = useState('');
   const [uploadMode, setUploadMode] = useState<'text' | 'image'>('text');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [config, setConfig] = useState<ProcessingConfig>(defaultConfig);
   const [processedNotes, setProcessedNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -41,24 +42,42 @@ export const NoteSubmission: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    if (!notes.trim()) {
+    // Validate input based on upload mode
+    if (uploadMode === 'text' && !notes.trim()) {
       setError('Please enter some text to process');
+      return;
+    }
+    
+    if (uploadMode === 'image' && !selectedFile) {
+      setError('Please select an image file to process');
       return;
     }
 
     try {
       setIsProcessing(true);
       setError(null);
-      setProcessingStatus('Creating note...');
       
-      // Create note with backend
-      const noteResponse = await createNote({
-        text: notes,
-        settings: config
-      });
+      let noteResponse: NoteResponse;
+      
+      if (uploadMode === 'image' && selectedFile) {
+        setProcessingStatus('Uploading image...');
+        
+        // Upload image and create note
+        noteResponse = await uploadImageNote(selectedFile, config);
+        setProcessingStatus('Extracting text from image...');
+        
+      } else {
+        setProcessingStatus('Creating note...');
+        
+        // Create text note
+        noteResponse = await createNote({
+          text: notes,
+          settings: config
+        });
+        setProcessingStatus('Processing with ChatGPT...');
+      }
       
       setCurrentNote(noteResponse);
-      setProcessingStatus('Processing with ChatGPT...');
       
       // Poll for completion
       const completedNote = await pollNoteStatus(
@@ -66,13 +85,21 @@ export const NoteSubmission: React.FC = () => {
         (updatedNote) => {
           setCurrentNote(updatedNote);
           if (updatedNote.status === 'processing') {
-            setProcessingStatus('Processing with ChatGPT...');
+            if (uploadMode === 'image') {
+              setProcessingStatus('Processing with OCR and ChatGPT...');
+            } else {
+              setProcessingStatus('Processing with ChatGPT...');
+            }
           }
         }
       );
       
       if (completedNote.status === 'completed' && completedNote.processed_content) {
         setProcessedNotes(completedNote.processed_content);
+        // For image notes, also update the extracted text
+        if (uploadMode === 'image' && completedNote.text) {
+          setNotes(completedNote.text);
+        }
         setCurrentStep('result');
         setProcessingStatus('');
       } else if (completedNote.status === 'error') {
@@ -81,7 +108,7 @@ export const NoteSubmission: React.FC = () => {
       
     } catch (error) {
       console.error('Error processing note:', error);
-      setError(error instanceof Error ? error.message : 'An error occurred while processing your text');
+      setError(error instanceof Error ? error.message : 'An error occurred while processing your content');
       setProcessingStatus('');
     } finally {
       setIsProcessing(false);
@@ -97,6 +124,7 @@ export const NoteSubmission: React.FC = () => {
     setCurrentStep('upload');
     setNotes('');
     setUploadMode('text');
+    setSelectedFile(null);
     setConfig(defaultConfig);
     setProcessedNotes('');
     setError(null);
@@ -181,6 +209,7 @@ export const NoteSubmission: React.FC = () => {
               onNext={handleNext}
               uploadMode={uploadMode}
               onUploadModeChange={setUploadMode}
+              onFileSelect={setSelectedFile}
             />
           )}
 

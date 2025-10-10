@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import json
 from fastapi.security import OAuth2PasswordBearer
 from firebase_admin import auth
@@ -9,6 +9,8 @@ from firebase_admin import auth
 from database import get_db, Note
 from schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus
 from chatgpt_service import chatgpt_service, ProcessingSettings
+from dropbox_service import dropbox_service
+from ocr_service import ocr_service
 import firebasesdk  # Initialize Firebase
 
 # ----- firebase-fix: Add authentication dependency -----
@@ -75,6 +77,10 @@ async def create_note(
         settings=note.settings,
         processed_content=db_note.processed_content,
         status=db_note.status,
+        image_url=db_note.image_url,
+        image_filename=db_note.image_filename,
+        image_type=db_note.image_type,
+        input_type=db_note.input_type,
         created_at=db_note.created_at,
         updated_at=db_note.updated_at
     )
@@ -99,6 +105,10 @@ async def get_note(
         settings=json.loads(db_note.settings_json),
         processed_content=db_note.processed_content,
         status=db_note.status,
+        image_url=db_note.image_url,
+        image_filename=db_note.image_filename,
+        image_type=db_note.image_type,
+        input_type=db_note.input_type,
         created_at=db_note.created_at,
         updated_at=db_note.updated_at
     )
@@ -123,6 +133,10 @@ async def get_notes(
             settings=json.loads(note.settings_json),
             processed_content=note.processed_content,
             status=note.status,
+            image_url=note.image_url,
+            image_filename=note.image_filename,
+            image_type=note.image_type,
+            input_type=note.input_type,
             created_at=note.created_at,
             updated_at=note.updated_at
         )
@@ -143,10 +157,99 @@ async def delete_note(
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
+    # Delete image from Dropbox if it exists
+    if db_note.image_url and hasattr(db_note, 'image_path'):
+        dropbox_service.delete_image(db_note.image_path)
+    
     db.delete(db_note)
     db.commit()
     
     return {"message": "Note deleted successfully"}
+
+@app.post("/upload-image/", response_model=NoteResponse)
+async def upload_image_note(
+    file: UploadFile = File(...),
+    settings: str = Form(...),  # JSON string of ProcessingSettings
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Upload an image file, store it in Firebase Storage, and create a note with OCR processing
+    """
+    try:
+        # Validate file type
+        if not dropbox_service.validate_file_type(file.filename, file.content_type):
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid file type. Only PNG, JPG, JPEG, and PDF files are allowed."
+            )
+        
+        # Check file size (limit to 10MB)
+        file_content = await file.read()
+        if len(file_content) > 10 * 1024 * 1024:  # 10MB in bytes
+            raise HTTPException(status_code=400, detail="File size too large. Maximum size is 10MB.")
+        
+        # Parse settings
+        try:
+            settings_dict = json.loads(settings)
+            processing_settings = ProcessingSettings(**settings_dict)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise HTTPException(status_code=400, detail="Invalid settings format")
+        
+        # Upload image to Dropbox
+        shareable_url, dropbox_path = dropbox_service.upload_image(
+            file_content, file.filename, user["uid"]
+        )
+        
+        # Determine file type
+        file_extension = file.filename.lower().split('.')[-1]
+        image_type = "pdf" if file_extension == "pdf" else "image"
+        
+        # Create note in database
+        db_note = Note(
+            user_id=user["uid"],
+            text=None,  # Will be populated after OCR
+            settings_json=json.dumps(processing_settings.dict()),
+            status=ProcessingStatus.PROCESSING,
+            input_type="image",
+            image_url=shareable_url,
+            image_path=dropbox_path,  # Store Dropbox path
+            image_filename=file.filename,
+            image_type=image_type
+        )
+        db.add(db_note)
+        db.commit()
+        db.refresh(db_note)
+        
+        # Add background task to process the image with OCR
+        background_tasks.add_task(
+            process_image_note_background, 
+            db_note.id, 
+            dropbox_path, 
+            processing_settings
+        )
+        
+        # Return the created note
+        return NoteResponse(
+            id=db_note.id,
+            text=db_note.text,
+            settings=processing_settings,
+            processed_content=db_note.processed_content,
+            status=db_note.status,
+            image_url=db_note.image_url,
+            image_filename=db_note.image_filename,
+            image_type=db_note.image_type,
+            input_type=db_note.input_type,
+            created_at=db_note.created_at,
+            updated_at=db_note.updated_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error uploading image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload image: {str(e)}")
 
 async def process_note_background(note_id: int, settings):
     """
@@ -185,6 +288,63 @@ async def process_note_background(note_id: int, settings):
     except Exception as e:
         # Update status to error
         print(f"Error processing note {note_id}: {str(e)}")
+        if db_note:
+            db_note.status = ProcessingStatus.ERROR
+            db.commit()
+    finally:
+        db.close()
+
+async def process_image_note_background(note_id: int, dropbox_path: str, settings):
+    """
+    Background task to process image note with OCR and ChatGPT
+    """
+    from database import SessionLocal
+    db = SessionLocal()
+    db_note = None
+    try:
+        # Get the note from database
+        db_note = db.query(Note).filter(Note.id == note_id).first()
+        if not db_note:
+            print(f"Note {note_id} not found")
+            return
+        
+        print(f"Starting OCR processing for note {note_id}")
+        
+        # Extract text from image using OCR
+        extracted_text = ocr_service.extract_text_from_image_url(dropbox_path)
+        
+        if not extracted_text.strip():
+            raise Exception("No text could be extracted from the image")
+        
+        # Update note with extracted text
+        db_note.text = extracted_text
+        db.commit()
+        
+        print(f"OCR completed for note {note_id}, extracted text length: {len(extracted_text)}")
+        
+        # Convert settings to ProcessingSettings object
+        processing_settings = ProcessingSettings(
+            add_bullet_points=settings.add_bullet_points,
+            add_headers=settings.add_headers,
+            expand=settings.expand,
+            summarize=settings.summarize
+        )
+        
+        # Process with ChatGPT
+        processed_content = await chatgpt_service.process_text_with_chatgpt(
+            extracted_text, 
+            processing_settings
+        )
+        
+        # Update the note with processed content
+        db_note.processed_content = processed_content
+        db_note.status = ProcessingStatus.COMPLETED
+        db.commit()
+        print(f"Successfully processed image note {note_id}")
+        
+    except Exception as e:
+        # Update status to error
+        print(f"Error processing image note {note_id}: {str(e)}")
         if db_note:
             db_note.status = ProcessingStatus.ERROR
             db.commit()

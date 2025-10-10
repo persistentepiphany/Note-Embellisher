@@ -21,10 +21,15 @@ class NoteCreate(BaseModel):
 
 class NoteResponse(BaseModel):
     id: int
-    text: str
+    text: Optional[str] = None  # Made optional since image notes start without text
     settings: ProcessingSettingsSchema
     processed_content: Optional[str] = None
     status: ProcessingStatus
+    # Image-related fields
+    image_url: Optional[str] = None
+    image_filename: Optional[str] = None
+    image_type: Optional[str] = None
+    input_type: str = "text"
     created_at: datetime
     updated_at: Optional[datetime] = None
 
