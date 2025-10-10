@@ -84,12 +84,13 @@ export const NoteSubmission: React.FC = () => {
         noteResponse.id,
         (updatedNote) => {
           setCurrentNote(updatedNote);
+          // Use progress_message from backend if available, otherwise fall back to default messages
           if (updatedNote.status === 'processing') {
-            if (uploadMode === 'image') {
-              setProcessingStatus('Processing with OCR and ChatGPT...');
-            } else {
-              setProcessingStatus('Processing with ChatGPT...');
-            }
+            const message = updatedNote.progress_message || 
+              (uploadMode === 'image' 
+                ? 'Processing with OCR and ChatGPT...' 
+                : 'Processing with ChatGPT...');
+            setProcessingStatus(message);
           }
         }
       );
@@ -188,14 +189,34 @@ export const NoteSubmission: React.FC = () => {
           </div>
         )}
 
-        {/* Processing Status */}
+        {/* Processing Status with Progress Bar */}
         {isProcessing && processingStatus && (
-          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <div className="flex items-center">
-              <div className="relative">
-                <div className="w-5 h-5 border-2 border-amber-200 border-t-amber-500 rounded-full animate-spin mr-3"></div>
+          <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-6 shadow-sm">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="relative mr-3">
+                    <div className="w-5 h-5 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin"></div>
+                  </div>
+                  <span className="text-amber-800 font-medium">{processingStatus}</span>
+                </div>
+                {currentNote && (
+                  <span className="text-sm text-amber-700 font-semibold">
+                    {currentNote.progress || 0}%
+                  </span>
+                )}
               </div>
-              <span className="text-amber-700">{processingStatus}</span>
+              {/* Progress bar */}
+              {currentNote && (
+                <div className="w-full bg-amber-100 rounded-full h-3 overflow-hidden shadow-inner">
+                  <div 
+                    className="bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 h-3 rounded-full transition-all duration-500 ease-out shadow-sm"
+                    style={{ width: `${currentNote.progress || 0}%` }}
+                  >
+                    <div className="w-full h-full animate-pulse opacity-30 bg-white"></div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
