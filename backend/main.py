@@ -7,7 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from firebase_admin import auth
 
 from database import get_db, Note
-from schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus
+from schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus, ProcessingSettingsSchema
 from chatgpt_service import chatgpt_service, ProcessingSettings
 from dropbox_service import dropbox_service
 from ocr_service import ocr_service
@@ -60,7 +60,12 @@ async def create_note(
     db_note = Note(
         user_id=user["uid"],  # firebase-fix: Link note to user
         text=note.text,
-        settings_json=json.dumps(note.settings.dict()),
+        settings_json=json.dumps({
+            "add_bullet_points": note.settings.add_bullet_points,
+            "add_headers": note.settings.add_headers,
+            "expand": note.settings.expand,
+            "summarize": note.settings.summarize
+        }),
         status=ProcessingStatus.PROCESSING
     )
     db.add(db_note)
@@ -158,8 +163,11 @@ async def delete_note(
         raise HTTPException(status_code=404, detail="Note not found")
     
     # Delete image from Dropbox if it exists
-    if db_note.image_url and hasattr(db_note, 'image_path'):
-        dropbox_service.delete_image(db_note.image_path)
+    if db_note.image_path:
+        try:
+            dropbox_service.delete_image(db_note.image_path)
+        except Exception as e:
+            print(f"Warning: Failed to delete image from Dropbox: {e}")
     
     db.delete(db_note)
     db.commit()
@@ -175,7 +183,7 @@ async def upload_image_note(
     user: dict = Depends(get_current_user)
 ):
     """
-    Upload an image file, store it in Firebase Storage, and create a note with OCR processing
+    Upload an image file, store it in Dropbox, and create a note with OCR processing
     """
     try:
         # Validate file type
@@ -210,7 +218,12 @@ async def upload_image_note(
         db_note = Note(
             user_id=user["uid"],
             text=None,  # Will be populated after OCR
-            settings_json=json.dumps(processing_settings.dict()),
+            settings_json=json.dumps({
+                "add_bullet_points": processing_settings.add_bullet_points,
+                "add_headers": processing_settings.add_headers,
+                "expand": processing_settings.expand,
+                "summarize": processing_settings.summarize
+            }),
             status=ProcessingStatus.PROCESSING,
             input_type="image",
             image_url=shareable_url,
@@ -234,7 +247,12 @@ async def upload_image_note(
         return NoteResponse(
             id=db_note.id,
             text=db_note.text,
-            settings=processing_settings,
+            settings=ProcessingSettingsSchema(
+                add_bullet_points=processing_settings.add_bullet_points,
+                add_headers=processing_settings.add_headers,
+                expand=processing_settings.expand,
+                summarize=processing_settings.summarize
+            ),
             processed_content=db_note.processed_content,
             status=db_note.status,
             image_url=db_note.image_url,

@@ -29,7 +29,8 @@ class Note(Base):
     processed_content = Column(Text, nullable=True)
     status = Column(String(20), default="pending")
     # Image-related fields
-    image_url = Column(String, nullable=True)  # Firebase Storage URL
+    image_url = Column(String, nullable=True)  # Dropbox shareable URL
+    image_path = Column(String, nullable=True)  # Dropbox file path for internal operations
     image_filename = Column(String, nullable=True)  # Original filename
     image_type = Column(String(10), nullable=True)  # 'image' or 'pdf'
     input_type = Column(String(10), default="text")  # 'text' or 'image'
