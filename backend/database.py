@@ -21,6 +21,9 @@ class Note(Base):
     __tablename__ = "notes"
     
     id = Column(Integer, primary_key=True, index=True)
+    # ----- firebase-fix: Add user_id to link notes to users -----
+    user_id = Column(String, index=True, nullable=False)
+    # ----------------------------------------------------------
     text = Column(Text, nullable=False)
     settings_json = Column(Text, nullable=False)  # Store settings as JSON string
     processed_content = Column(Text, nullable=True)
