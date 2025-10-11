@@ -4,7 +4,10 @@
 # Navigate to backend directory
 cd backend
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Upgrade pip
+pip install --upgrade pip
+
+# Install Python dependencies with verbose output
+pip install -r requirements.txt --verbose
 
 echo "Build completed successfully!"

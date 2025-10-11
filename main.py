@@ -16,9 +16,20 @@ os.chdir(backend_path)
 
 # Import and run the FastAPI app
 if __name__ == "__main__":
-    from main import app
-    import uvicorn
-    import os
-    
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    try:
+        from main import app
+        import uvicorn
+        
+        port = int(os.environ.get("PORT", 8000))
+        print(f"Starting server on port {port}")
+        uvicorn.run(app, host="0.0.0.0", port=port)
+    except ImportError as e:
+        print(f"Import error: {e}")
+        print("Available modules:")
+        import pkgutil
+        for importer, modname, ispkg in pkgutil.iter_modules():
+            print(f"  {modname}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error starting server: {e}")
+        sys.exit(1)
