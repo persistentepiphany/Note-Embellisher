@@ -36,7 +36,8 @@ app = FastAPI(title="Note Embellisher API", version="1.0.0")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=["https://note-embellisher-2.web.app", 
+                   "http://localhost:3000"],  # Allow all origins for development
     allow_credentials=False,  # Set to False when using allow_origins=["*"]
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
