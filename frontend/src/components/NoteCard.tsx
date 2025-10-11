@@ -29,7 +29,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     });
   };
 
-  const truncateText = (text: string, maxLength: number = 150) => {
+  const truncateText = (text: string | null | undefined, maxLength: number = 150) => {
+    if (!text) return '[No content available]';
     if (text.length <= maxLength) return text;
     return text.slice(0, maxLength) + '...';
   };
@@ -112,6 +113,12 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           {note.status === 'processing' && (
             <div className="bg-yellow-50 p-2 rounded">
               <p className="text-sm text-yellow-700">Processing with AI...</p>
+            </div>
+          )}
+          {note.status === 'error' && note.processed_content && (
+            <div className="bg-red-50 p-3 rounded border border-red-200">
+              <h4 className="text-sm font-medium text-red-700 mb-1">Error:</h4>
+              <p className="text-sm text-red-600">{note.processed_content}</p>
             </div>
           )}
           <div className="flex flex-wrap gap-1">

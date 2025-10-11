@@ -49,8 +49,23 @@ export function Dashboard() {
       setLoading(true);
       setError(null);
       const fetchedNotes = await getAllNotes();
-      setNotes(fetchedNotes);
+      
+      // Ensure all notes have valid structure to prevent rendering errors
+      const validNotes = fetchedNotes.map(note => ({
+        ...note,
+        text: note.text ?? '',
+        processed_content: note.processed_content ?? null,
+        settings: note.settings ?? {
+          add_bullet_points: false,
+          add_headers: false,
+          expand: false,
+          summarize: false
+        }
+      }));
+      
+      setNotes(validNotes);
     } catch (err) {
+      console.error('Error fetching notes:', err);
       setError(err instanceof Error ? err.message : 'Failed to load notes');
     } finally {
       setLoading(false);
@@ -64,14 +79,14 @@ export function Dashboard() {
 
 
   const handleDownloadNote = (note: NoteResponse) => {
-    const content = note.processed_content || note.text;
+    const content = note.processed_content || note.text || "";
     const filename = `note_${note.id}_${new Date(note.created_at).toISOString().split('T')[0]}.txt`;
     downloadTextFile(content, filename);
   };
 
   const handleExportNotePDF = async (note: NoteResponse) => {
     try {
-      const content = note.processed_content || note.text;
+      const content = note.processed_content || note.text || "";
       const title = `Note #${note.id}`;
       await exportToPDF(content, title);
     } catch (error) {
@@ -251,6 +266,7 @@ export function Dashboard() {
               <TabsTrigger value="recent">Recent</TabsTrigger>
               <TabsTrigger value="completed">Completed</TabsTrigger>
               <TabsTrigger value="processing">Processing</TabsTrigger>
+              <TabsTrigger value="error">Errors</TabsTrigger>
             </TabsList>
 
             <TabsContent value="all">
@@ -329,6 +345,28 @@ export function Dashboard() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {notes.filter(n => n.status === 'processing').map((note) => (
+                    <NoteCard
+                      key={note.id}
+                      note={note}
+                      onDownload={handleDownloadNote}
+                      onExportPDF={handleExportNotePDF}
+                      onDelete={handleDeleteNote}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="error">
+              {notes.filter(n => n.status === 'error').length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-600 mb-2">No errors</h3>
+                  <p className="text-gray-500 mb-4">Notes that failed to process will appear here.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {notes.filter(n => n.status === 'error').map((note) => (
                     <NoteCard
                       key={note.id}
                       note={note}

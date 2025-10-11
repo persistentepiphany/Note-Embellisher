@@ -367,10 +367,16 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         print(f"Successfully processed image note {note_id}")
         
     except Exception as e:
-        # Update status to error
-        print(f"Error processing image note {note_id}: {str(e)}")
+        # Update status to error and provide detailed error message
+        error_message = str(e)
+        print(f"Error processing image note {note_id}: {error_message}")
         if db_note:
             db_note.status = ProcessingStatus.ERROR
+            # Store the error message in processed_content so frontend can display it
+            db_note.processed_content = f"❌ Processing failed: {error_message}"
+            # Also ensure text field has content to prevent null issues
+            if not db_note.text:
+                db_note.text = "[Image processing failed - no text extracted]"
             db.commit()
     finally:
         db.close()
