@@ -1,0 +1,29 @@
+type User @table {
+  displayName: String!
+  createdAt: Timestamp!
+  email: String
+  photoUrl: String
+}
+
+type NoteProject @table {
+  user: User!
+  name: String!
+  createdAt: Timestamp!
+  description: String
+}
+
+type NoteImage @table {
+  user: User!
+  noteProject: NoteProject
+  imageUrl: String!
+  uploadDate: Timestamp!
+  status: String!
+  originalFilename: String
+}
+
+type Transcription @table {
+  noteImage: NoteImage!
+  transcribedText: String!
+  transcriptionDate: Timestamp!
+  lastEditedDate: Timestamp
+}
