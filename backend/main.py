@@ -10,7 +10,16 @@ from database import get_db, Note
 from schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus, ProcessingSettingsSchema
 from chatgpt_service import chatgpt_service, ProcessingSettings
 from dropbox_service import dropbox_service
-from ocr_service import ocr_service
+
+# Optional OCR service - disable if not available
+try:
+    from ocr_service import ocr_service
+    OCR_AVAILABLE = True
+except ImportError as e:
+    print(f"OCR service not available: {e}")
+    OCR_AVAILABLE = False
+    ocr_service = None
+
 import firebasesdk  # Initialize Firebase
 
 # ----- firebase-fix: Add authentication dependency -----
@@ -332,14 +341,17 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         print(f"Starting OCR processing for note {note_id}")
         
         # Extract text from image using OCR
-        extracted_text = ocr_service.extract_text_from_image_url(dropbox_path)
-        
-        if not extracted_text.strip():
-            raise Exception("No text could be extracted from the image")
-        
-        # Check if OCR failed and returned a fallback message
-        if "[OCR Processing Required]" in extracted_text:
-            raise Exception("OCR processing failed: Tesseract OCR is not installed or not available")
+        if not OCR_AVAILABLE or ocr_service is None:
+            extracted_text = "[OCR service is not available in this deployment. Please process text manually.]"
+        else:
+            extracted_text = ocr_service.extract_text_from_image_url(dropbox_path)
+            
+            if not extracted_text.strip():
+                raise Exception("No text could be extracted from the image")
+            
+            # Check if OCR failed and returned a fallback message
+            if "[OCR Processing Required]" in extracted_text:
+                raise Exception("OCR processing failed: Tesseract OCR is not installed or not available")
         
         # Update note with extracted text
         db_note.text = extracted_text
