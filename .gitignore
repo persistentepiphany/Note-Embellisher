@@ -1,1 +1,89 @@
+# Build directories
 build_opencv/
+opencv/
+opencv_contrib/
+
+# Environment and sensitive files
+.env
+.env.*
+*.env
+
+# Firebase sensitive files
+*firebase*adminsdk*.json
+firebase-adminsdk-*.json
+firebaseadminsdk.json
+firebase.config.js
+firebasesdk.py
+
+# API keys and tokens
+*apikey*
+*token*
+*secret*
+*credentials*
+*.pem
+*.p12
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+notes.db*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.pytest_cache/
+*.cover
+.hypothesis/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Logs
+*.log
+logs/
+
+# Deployment files
+deploy.sh
+*.zip
+*.tar.gz
+
+# Backup files
+*.backup
+*.bak
+*.old

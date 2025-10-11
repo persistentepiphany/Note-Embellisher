@@ -64,6 +64,45 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.*
+*.env
+
+# Firebase sensitive files
+*firebase*adminsdk*.json
+firebase-adminsdk-*.json
+firebaseadminsdk.json
+firebase.config.js
+
+# API keys and credentials
+*apikey*
+*token*
+*secret*
+*credentials*
 
 # dataconnect generated files
 .dataconnect
+
+# Build output
+dist/
+build/
+
+# OS files
+.DS_Store
+._*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Additional sensitive files
+*.pem
+*.p12
+*.key

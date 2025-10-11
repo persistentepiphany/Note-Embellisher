@@ -37,8 +37,10 @@ app = FastAPI(title="Note Embellisher API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://note-embellisher-2.web.app", 
-                   "http://localhost:3000"],  # Allow all origins for development
-    allow_credentials=False,  # Set to False when using allow_origins=["*"]
+                   "https://note-embellisher-2.firebaseapp.com",
+                   "http://localhost:3000",
+                   "http://localhost:5173"],  # Vite dev server
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -384,4 +386,6 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
