@@ -13,21 +13,31 @@ class DropboxService:
         self.app_key = os.getenv('DROPBOX_APP_KEY')
         self.app_secret = os.getenv('DROPBOX_APP_SECRET')
         self.access_token = os.getenv('DROPBOX_TOKEN')
+        self.is_available = False
+        self.dbx = None
         
         if not self.access_token:
-            raise ValueError("Dropbox access token not found in environment variables")
+            print("⚠️  Dropbox access token not found in environment variables")
+            return
         
-        # Initialize Dropbox client with access token
-        self.dbx = dropbox.Dropbox(self.access_token)
-        self._check_credentials()
+        try:
+            # Initialize Dropbox client with access token
+            self.dbx = dropbox.Dropbox(self.access_token)
+            self._check_credentials()
+        except Exception as e:
+            print(f"⚠️  Dropbox initialization failed: {e}")
+            self.dbx = None
 
     def _check_credentials(self):
         """Check if Dropbox credentials are valid"""
         try:
             self.dbx.users_get_current_account()
+            self.is_available = True
             print("✅ Dropbox client initialized successfully")
-        except AuthError:
-            raise HTTPException(status_code=401, detail="Invalid Dropbox credentials")
+        except AuthError as e:
+            print(f"⚠️  Dropbox authentication failed: {e}")
+            print("⚠️  Image upload feature will be disabled. Text notes will still work.")
+            self.is_available = False
 
     def upload_image(self, file_content: bytes, filename: str, user_id: str) -> Tuple[str, str]:
         """
@@ -41,6 +51,12 @@ class DropboxService:
         Returns:
             Tuple of (shareable_url, dropbox_path)
         """
+        if not self.is_available or not self.dbx:
+            raise HTTPException(
+                status_code=503, 
+                detail="Dropbox service is not available. Please contact administrator to refresh Dropbox credentials."
+            )
+            
         try:
             # Create a unique filename
             file_extension = os.path.splitext(filename)[1].lower()
@@ -75,6 +91,12 @@ class DropboxService:
         Returns:
             File content as bytes
         """
+        if not self.is_available or not self.dbx:
+            raise HTTPException(
+                status_code=503, 
+                detail="Dropbox service is not available."
+            )
+            
         try:
             _, res = self.dbx.files_download(path=dropbox_path)
             return res.content
@@ -93,6 +115,10 @@ class DropboxService:
         Returns:
             True if successful
         """
+        if not self.is_available or not self.dbx:
+            print("⚠️  Dropbox service not available, skipping deletion")
+            return False
+            
         try:
             self.dbx.files_delete_v2(dropbox_path)
             return True
