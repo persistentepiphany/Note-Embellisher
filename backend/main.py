@@ -4,12 +4,44 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
 from fastapi.security import OAuth2PasswordBearer
-from firebase_admin import auth
 
-from database import get_db, Note
-from schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus, ProcessingSettingsSchema
-from chatgpt_service import chatgpt_service, ProcessingSettings
-from dropbox_service import dropbox_service
+# Optional Firebase - disable if not available
+try:
+    from firebase_admin import auth
+    FIREBASE_AVAILABLE = True
+except ImportError as e:
+    print(f"Firebase admin not available: {e}")
+    FIREBASE_AVAILABLE = False
+    auth = None
+
+# Optional imports - make everything optional for minimal deployment
+try:
+    from database import get_db, Note
+    DATABASE_AVAILABLE = True
+except ImportError as e:
+    print(f"Database not available: {e}")
+    DATABASE_AVAILABLE = False
+
+try:
+    from schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus, ProcessingSettingsSchema
+    SCHEMAS_AVAILABLE = True
+except ImportError as e:
+    print(f"Schemas not available: {e}")
+    SCHEMAS_AVAILABLE = False
+
+try:
+    from chatgpt_service import chatgpt_service, ProcessingSettings
+    CHATGPT_AVAILABLE = True
+except ImportError as e:
+    print(f"ChatGPT service not available: {e}")
+    CHATGPT_AVAILABLE = False
+
+try:
+    from dropbox_service import dropbox_service
+    DROPBOX_AVAILABLE = True
+except ImportError as e:
+    print(f"Dropbox service not available: {e}")
+    DROPBOX_AVAILABLE = False
 
 # Optional OCR service - disable if not available
 try:
@@ -20,7 +52,13 @@ except ImportError as e:
     OCR_AVAILABLE = False
     ocr_service = None
 
-import firebasesdk  # Initialize Firebase
+# Optional Firebase SDK
+try:
+    import firebasesdk  # Initialize Firebase
+    FIREBASE_SDK_AVAILABLE = True
+except ImportError as e:
+    print(f"Firebase SDK not available: {e}")
+    FIREBASE_SDK_AVAILABLE = False
 
 # ----- firebase-fix: Add authentication dependency -----
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
