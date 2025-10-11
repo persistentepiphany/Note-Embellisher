@@ -178,8 +178,8 @@ class OCRService:
             
         Process:
         1. Load EasyOCR reader (lazy initialization on first use)
-        2. Preprocess image using OpenCV for better accuracy
-        3. Extract text using EasyOCR
+        2. Try multiple preprocessing approaches (for handwriting support)
+        3. Extract text using EasyOCR with handwriting-friendly settings
         4. Return the extracted text
         """
         try:
@@ -191,22 +191,81 @@ class OCRService:
                 self.reader = easyocr.Reader(['en'], gpu=False)  # Set gpu=True if CUDA is available
                 print("✅ EasyOCR reader loaded successfully")
             
-            # Preprocess image using OpenCV for better OCR results
+            # Try multiple preprocessing approaches
+            print("🔄 Attempting OCR with different preprocessing methods...")
+            
+            # Approach 1: Try with standard preprocessing (best for printed text)
             processed_image_path = self._preprocess_image_with_opencv(image_path)
             
-            # Use EasyOCR to extract text
+            # Use EasyOCR to extract text with settings optimized for handwriting
             # readtext returns a list of tuples: (bbox, text, confidence)
-            results = self.reader.readtext(processed_image_path)
+            # Lower confidence threshold for handwriting (default is 0.7)
+            results = self.reader.readtext(
+                processed_image_path,
+                paragraph=False,  # Don't merge text into paragraphs
+                detail=1,  # Return detailed info including confidence
+                text_threshold=0.4,  # Lower threshold for handwriting (default 0.7)
+                low_text=0.3,  # Lower threshold for text detection
+                link_threshold=0.3,  # Lower threshold for linking text
+                canvas_size=2560,  # Larger canvas for better quality
+                mag_ratio=1.5  # Magnification ratio for better recognition
+            )
             
-            # Extract just the text from results and join them
-            extracted_text = ' '.join([result[1] for result in results])
+            print(f"📊 Found {len(results)} text regions with standard preprocessing")
+            
+            # If we got poor results, try with minimal preprocessing (better for handwriting)
+            if len(results) < 3 or (results and sum(r[2] for r in results) / len(results) < 0.5):
+                print("🔄 Trying with minimal preprocessing (better for handwriting)...")
+                
+                # Clean up first processed image
+                if os.path.exists(processed_image_path) and processed_image_path != image_path:
+                    os.unlink(processed_image_path)
+                
+                # Try with just grayscale conversion (no aggressive processing)
+                minimal_processed = self._minimal_preprocess(image_path)
+                
+                results_minimal = self.reader.readtext(
+                    minimal_processed,
+                    paragraph=False,
+                    detail=1,
+                    text_threshold=0.4,
+                    low_text=0.3,
+                    link_threshold=0.3,
+                    canvas_size=2560,
+                    mag_ratio=1.5
+                )
+                
+                print(f"📊 Found {len(results_minimal)} text regions with minimal preprocessing")
+                
+                # Use whichever approach found more text
+                if len(results_minimal) > len(results):
+                    results = results_minimal
+                    processed_image_path = minimal_processed
+                    print("✅ Using minimal preprocessing results")
+                else:
+                    if os.path.exists(minimal_processed) and minimal_processed != image_path:
+                        os.unlink(minimal_processed)
+                    print("✅ Using standard preprocessing results")
+            
+            # Extract text from results, sorted by vertical position (top to bottom)
+            # Sort by y-coordinate of bounding box
+            sorted_results = sorted(results, key=lambda x: x[0][0][1])  # x[0][0][1] is top-left y
+            
+            # Join text with spaces, preserving confidence info
+            text_parts = []
+            for bbox, text, confidence in sorted_results:
+                if confidence > 0.3:  # Only include text with some confidence
+                    text_parts.append(text)
+                    print(f"  📝 Detected: '{text}' (confidence: {confidence:.2f})")
+            
+            extracted_text = ' '.join(text_parts)
             
             # Clean up processed image if it's different from original
             if processed_image_path != image_path and os.path.exists(processed_image_path):
                 os.unlink(processed_image_path)
             
             if not extracted_text.strip():
-                raise Exception("No text could be extracted from the image")
+                raise Exception("No text could be extracted from the image. This may be due to: 1) Handwriting that is too unclear, 2) Very low image quality, 3) Non-standard fonts")
             
             print(f"✅ Successfully extracted {len(extracted_text)} characters from image")
             return extracted_text.strip()
@@ -351,6 +410,72 @@ class OCRService:
             print(f"⚠️ Error preprocessing image with OpenCV: {str(e)}")
             print(f"🔄 Falling back to original image")
             return image_path  # Return original path if preprocessing fails
+    
+    def _minimal_preprocess(self, image_path: str) -> str:
+        """
+        Minimal preprocessing for handwritten text (gentler approach)
+        
+        Args:
+            image_path: Path to the original image
+            
+        Returns:
+            Path to minimally processed image
+            
+        This approach is better for handwritten text because:
+        - No aggressive thresholding that can break up handwriting
+        - Preserves natural stroke variations
+        - Only does basic grayscale conversion and resizing
+        """
+        try:
+            # Read image using OpenCV
+            img = cv2.imread(image_path)
+            
+            if img is None:
+                print(f"⚠️ Could not load image, using original: {image_path}")
+                return image_path
+            
+            # Get original dimensions
+            height, width = img.shape[:2]
+            
+            # Step 1: Convert to grayscale only (no thresholding for handwriting)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Step 2: Apply very gentle denoising (preserves handwriting details)
+            denoised = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
+            
+            # Step 3: Slight contrast enhancement (helps with faint handwriting)
+            # Using CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(denoised)
+            
+            # Step 4: Resize if needed (same as standard preprocessing)
+            max_dimension = 3000
+            min_dimension = 500
+            
+            if max(width, height) > max_dimension:
+                scale = max_dimension / max(width, height)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                enhanced = cv2.resize(enhanced, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                print(f"📉 Resized large image to: {new_width}x{new_height}")
+            
+            elif max(width, height) < min_dimension:
+                scale = min_dimension / max(width, height)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                enhanced = cv2.resize(enhanced, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+                print(f"📈 Resized small image to: {new_width}x{new_height}")
+            
+            # Save minimally processed image
+            processed_path = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
+            cv2.imwrite(processed_path, enhanced)
+            
+            print(f"✅ Image preprocessed with minimal processing (handwriting mode)")
+            return processed_path
+            
+        except Exception as e:
+            print(f"⚠️ Error in minimal preprocessing: {str(e)}")
+            return image_path
     
     def _correct_text_with_ai(self, raw_text: str) -> str:
         """
