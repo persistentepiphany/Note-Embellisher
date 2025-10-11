@@ -1,13 +1,10 @@
 #!/bin/bash
 # Build script for Render deployment
 
-# Navigate to backend directory
-cd backend
-
-# Upgrade pip
+# Upgrade pip first
 pip install --upgrade pip
 
-# Install Python dependencies with verbose output
-pip install -r requirements.txt --verbose
+# Install minimal Python dependencies
+pip install -r requirements-render.txt
 
 echo "Build completed successfully!"
