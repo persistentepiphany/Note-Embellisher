@@ -1,0 +1,20 @@
+mutation CreateUser($displayName: String!, $email: String, $photoUrl: String) @auth(level: USER) {
+  user_insert(data: {displayName: $displayName, email: $email, photoUrl: $photoUrl, createdAt_expr: "request.time", id_expr: "uuidV4()"})
+}
+
+query GetNoteProjectsByUser @auth(level: USER) {
+  noteProjects(where: {userId: {eq_expr: "auth.uid"}}) {
+    id
+    name
+    description
+    createdAt
+  }
+}
+
+mutation CreateNoteImage($noteProjectId: UUID!, $imageUrl: String!, $originalFilename: String, $status: String!) @auth(level: USER) {
+  noteImage_insert(data: {noteProjectId: $noteProjectId, imageUrl: $imageUrl, originalFilename: $originalFilename, status: $status, userId_expr: "auth.uid", uploadDate_expr: "request.time", id_expr: "uuidV4()"})
+}
+
+mutation CreateTranscription($noteImageId: UUID!, $transcribedText: String!) @auth(level: USER) {
+  transcription_insert(data: {noteImageId: $noteImageId, transcribedText: $transcribedText, transcriptionDate_expr: "request.time", id_expr: "uuidV4()"})
+}

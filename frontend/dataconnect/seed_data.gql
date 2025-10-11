@@ -1,0 +1,60 @@
+mutation CreateSeedData @transaction @auth(level: NO_ACCESS) {
+  user_insertMany(data: [
+    {
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      displayName: "demouser1",
+      createdAt: "2024-04-24T12:00:00Z"
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      displayName: "demouser2",
+      createdAt: "2024-04-24T12:00:00Z"
+    }
+  ])
+  noteProject_insertMany(data: [
+    {
+      id: "650e8400-e29b-41d4-a716-446655440000",
+      userId: "550e8400-e29b-41d4-a716-446655440000",
+      name: "demoproject1",
+      createdAt: "2024-04-24T12:00:00Z"
+    },
+    {
+      id: "650e8400-e29b-41d4-a716-446655440001",
+      userId: "550e8400-e29b-41d4-a716-446655440001",
+      name: "demoproject2",
+      createdAt: "2024-04-24T12:00:00Z"
+    }
+  ])
+  noteImage_insertMany(data: [
+    {
+      id: "750e8400-e29b-41d4-a716-446655440000",
+      noteProjectId: "650e8400-e29b-41d4-a716-446655440000",
+      userId: "550e8400-e29b-41d4-a716-446655440000",
+      imageUrl: "http://example.com/image1.jpg",
+      status: "UPLOADED",
+      uploadDate: "2024-04-24T12:00:00Z"
+    },
+    {
+      id: "750e8400-e29b-41d4-a716-446655440001",
+      noteProjectId: "650e8400-e29b-41d4-a716-446655440001",
+      userId: "550e8400-e29b-41d4-a716-446655440001",
+      imageUrl: "http://example.com/image2.jpg",
+      status: "UPLOADED",
+      uploadDate: "2024-04-24T12:00:00Z"
+    }
+  ])
+ transcription_insertMany(data: [
+    {
+      id: "850e8400-e29b-41d4-a716-446655440000",
+      noteImageId: "750e8400-e29b-41d4-a716-446655440000",
+      transcribedText: "This is an example transcription",
+      transcriptionDate: "2024-04-24T12:00:00Z"
+    },
+    {
+      id: "850e8400-e29b-41d4-a716-446655440001",
+      noteImageId: "750e8400-e29b-41d4-a716-446655440001",
+      transcribedText: "Another example transcription",
+      transcriptionDate: "2024-04-24T12:00:00Z"
+    }
+  ])
+}
