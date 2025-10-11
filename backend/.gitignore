@@ -1,5 +1,88 @@
+# Environment files
 .env
+.env.*
+*.env
+
+# Firebase sensitive files
 firebase.config.js
-note-embellisher-2-firebase-adminsdk-fbsvc-7b092dcc93
-firebasesdk.py
+*firebase*adminsdk*.json
+firebase-adminsdk-*.json
 firebaseadminsdk.json
+firebasesdk.py
+note-embellisher-2-firebase-adminsdk-fbsvc-*
+
+# API keys and credentials
+*apikey*
+*token*
+*secret*
+*credentials*
+*.pem
+*.p12
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+notes.db*
+
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+*.cover
+.hypothesis/
+.coverage
+.tox/
+
+# Virtual environment
+bin/
+lib/
+lib64/
+include/
+share/
+pyvenv.cfg
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Logs
+*.log
+logs/
+
+# Uploads and user data
+uploads/
+images/
+files/
+
+# Deployment
+Dockerfile.prod
+docker-compose.prod.yml
+deploy.sh
+*.zip
+*.tar.gz
+
+# OS files
+.DS_Store
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backup files
+*.backup
+*.bak
+*.old
