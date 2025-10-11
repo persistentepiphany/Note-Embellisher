@@ -8,10 +8,10 @@ import { getAuth } from "firebase/auth";
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyAJZbEIQHaPPAPE9ntxl1VRoag1KReB-yU",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "note-embellisher-2.firebaseapp.com",
   projectId: "note-embellisher-2",
-  storageBucket: "note-embellisher-2.firebasestorage.app",
+  storageBucket: "note-embellisher-2.appspot.com",
   messagingSenderId: "113873215178",
   appId: "1:113873215178:web:6077e1a7f322f552201e33",
   measurementId: "G-T0G3516BBB"
