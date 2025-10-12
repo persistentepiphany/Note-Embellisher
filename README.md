@@ -13,12 +13,12 @@ An AI-powered web app platform that transforms messy notes with EasyOCR into wel
 
 <p align="center">
   <img src="gifs_pathway_fixed/snippet_one.gif" width="600" alt="Dashboard demo">
-  <br><em>Scanning and embellishing notes in action</em>
+  <br><em>Exporting results and managing dashboard</em>
 </p>
 
 <p align="center">
   <img src="gifs_pathway_fixed/snippet_three.gif" width="600" alt="Embellished output example">
-  <br><em>Exporting results and managing dashboard</em>
+  <br><em>Scanning and embellishing notes in action</em>
 </p>
 
 ## Page layout
@@ -219,6 +219,7 @@ Note Embellisher Project/
 ## 🪪 License
 This project is licensed under the MIT License.  
 © 2025 github.com/persistentepiphany (persistentepiphany)
+
 
 
 
