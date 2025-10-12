@@ -1,6 +1,6 @@
 # Note-Embellisher
 ## Overview
-An AI-powered web app platform that transforms messy notes with EasyOCR into well-organized documents with headers, bullet points, and other improvements available for download as PDF/.txt files. 
+An AI-powered web app platform that transforms messy notes with EasyOCR into well-organized documents with headers, bullet points, and other improvements available for download as PDF/.txt files. Enables users to sign in using Google/email, create projects and store them in a dashboard linked to their account, and customize & improve uploaded notes - whether they are uploaded as typed text or images scanned and processed by EasyOCR and OpenCV.  
 
 > A full stack-web app built with FastAPI, ReactJS, EasyOCR, TailwindCSS, Firebase & Dropbox API, deployable on Firebase for the frontend and Render for the backend.
 
@@ -219,6 +219,7 @@ Note Embellisher Project/
 ## 🪪 License
 This project is licensed under the MIT License.  
 © 2025 github.com/persistentepiphany (persistentepiphany)
+
 
 
 
