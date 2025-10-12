@@ -69,12 +69,17 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     """
     try:
         decoded_token = auth.verify_id_token(token)
+        print(f"🔐 User authenticated - UID: {decoded_token.get('uid', 'No UID found')}")
+        print(f"🔐 User email: {decoded_token.get('email', 'No email found')}")
         return decoded_token
     except auth.InvalidIdTokenError:
+        print("❌ Authentication failed: Invalid ID token")
         raise HTTPException(status_code=401, detail="Invalid ID token")
     except auth.ExpiredIdTokenError:
+        print("❌ Authentication failed: Expired ID token")
         raise HTTPException(status_code=401, detail="Expired ID token")
-    except Exception:
+    except Exception as e:
+        print(f"❌ Authentication failed: {str(e)}")
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 # ----------------------------------------------------
 
@@ -95,6 +100,29 @@ app.add_middleware(
 @app.get("/")
 async def root():
     return {"message": "Note Embellisher API"}
+
+@app.get("/debug/all-notes")
+async def debug_all_notes(db: Session = Depends(get_db)):
+    """
+    Debug endpoint to see all notes in database (no authentication)
+    """
+    if not DATABASE_AVAILABLE:
+        return {"error": "Database not available"}
+    
+    notes = db.query(Note).all()
+    return {
+        "total_notes": len(notes),
+        "notes": [
+            {
+                "id": note.id,
+                "user_id": note.user_id,
+                "text_preview": note.text[:50] if note.text else "No text",
+                "status": note.status,
+                "created_at": str(note.created_at)
+            }
+            for note in notes
+        ]
+    }
 
 @app.post("/notes/", response_model=NoteResponse)
 async def create_note(
@@ -179,7 +207,10 @@ async def get_notes(
     Get all notes with pagination
     """
     # firebase-fix: Filter by user_id
-    notes = db.query(Note).filter(Note.user_id == user["uid"]).offset(skip).limit(limit).all()
+    user_id = user["uid"]
+    print(f"📋 Fetching notes for user: {user_id}")
+    notes = db.query(Note).filter(Note.user_id == user_id).offset(skip).limit(limit).all()
+    print(f"📋 Found {len(notes)} notes for user {user_id}")
     
     return [
         NoteResponse(
