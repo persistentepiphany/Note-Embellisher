@@ -118,6 +118,22 @@ An AI-powered web app platform that transforms messy notes with EasyOCR into wel
 | Storage | Firebase, Dropbox API |
 | AI/OCR | EasyOCR, OpenAI API |
 | Output | ReportLab, PDF/TXT Export |
+#### Third-Party Services
+
+<p align="left">
+  <a href="https://firebase.google.com/" target="_blank">
+    <img src="https://www.vectorlogo.zone/logos/firebase/firebase-icon.svg" alt="Firebase" width="50" height="50"/>
+  </a>
+  <a href="https://dropbox.com/" target="_blank">
+    <img src="https://www.vectorlogo.zone/logos/dropbox/dropbox-icon.svg" alt="Dropbox" width="50" height="50"/>
+  </a>
+  <a href="https://render.com/" target="_blank">
+    <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/render.svg" alt="Render" width="50" height="50"/>
+  </a>
+  <a href="https://openai.com/" target="_blank">
+    <img src="https://www.vectorlogo.zone/logos/openai/openai-icon.svg" alt="OpenAI" width="50" height="50"/>
+  </a>
+</p>
 
 ## Architecture
 ### Main Files
@@ -203,5 +219,6 @@ Note Embellisher Project/
 ## 🪪 License
 This project is licensed under the MIT License.  
 © 2025 github.com/persistentepiphany (persistentepiphany)
+
 
 
