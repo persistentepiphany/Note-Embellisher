@@ -36,7 +36,79 @@ An AI-powered web app platform that transforms messy notes with EasyOCR into wel
  2. Configure the note embellishment
  3. Download the enhanced notes/return to dashboard
 
+<table>
+<tr>
+<td align="center" width="50%">
+  <b>Step 1: Log in & Enter Dashboard</b><br>
+  <img src="features_images/empty_dashboard.png" width="400">
+</td>
+<td align="center" width="50%">
+  <b>Step 2: Upload File</b><br>
+  <img src="features_images/upload_photo.png" width="400">
+</td>
+</tr>
+<tr>
+<td align="center" width="50%">
+  <b>Step 3: File Scanned & Uploaded</b><br>
+  <img src="features_images/uploaded_file.png" width="400">
+</td>
+<td align="center" width="50%">
+  <b>Step 4: Download Text</b><br>
+  <img src="features_images/enhanced_notes.png" width="400">
+</td>
+</tr>
+</table>
+
 ## Features 
+### 1. Authentication
+
+* User authentication handled through Firebase Authentication.
+
+* Each user has an isolated workspace and persistent session management.
+
+### 2. Dashboard and Data Storage
+
+* Displays all uploaded and processed notes.
+
+* Built on Firebase Firestore for structured, real-time data storage.
+
+* Supports filtering and sorting by date, subject, and processing status.
+
+### 3. Dropbox Integration
+
+* Uploaded note images are stored in Dropbox using the official API.
+
+* Each upload is automatically linked to the user’s Firebase profile.
+
+### 4. OCR Processing
+
+* Text extraction from handwritten notes using EasyOCR.
+
+* Supports multiple handwriting styles and variable image quality.
+
+* Provides raw text output for further processing.
+
+### 5. LLM Note Embellishment
+
+* Processes OCR text through an LLM pipeline to improve structure and readability.
+
+* Adds section headers, bullet points, and concise summaries.
+
+* Implements prompt templates to ensure consistent formatting.
+
+### 6. Exports
+
+* Generates downloadable PDF and TXT files for each processed note.
+
+* PDF rendering handled with ReportLab for a clean layout.
+
+* All exported files remain available through the dashboard.
+
+### 7. Filtering and Organization
+
+* Dashboard filtering by date, topic, or note status.
+
+* Enables quick access to specific uploads or previously processed notes.
 
 ## Libraries & APIs 
 | Layer | Technologies |
@@ -131,4 +203,5 @@ Note Embellisher Project/
 ## 🪪 License
 This project is licensed under the MIT License.  
 © 2025 github.com/persistentepiphany (persistentepiphany)
+
 
