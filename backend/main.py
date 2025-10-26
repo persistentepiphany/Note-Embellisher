@@ -114,6 +114,10 @@ async def root():
         }
     }
 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": "2025-10-26"}
+
 @app.get("/debug/all-notes")
 async def debug_all_notes(db: Session = Depends(get_db)):
     """
@@ -481,5 +485,10 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
 if __name__ == "__main__":
     import uvicorn
     import os
+    
+    # Railway provides PORT environment variable
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    print(f"🚀 Starting server on host=0.0.0.0 port={port}")
+    
+    # Use the app reference directly for Railway
+    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
