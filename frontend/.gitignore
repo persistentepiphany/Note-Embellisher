@@ -72,8 +72,11 @@ node_modules/
 firebase-adminsdk-*.json
 firebaseadminsdk.json
 firebase.config.js
+<<<<<<< HEAD
 src/firebase.ts
 firebase.ts
+=======
+>>>>>>> 91459d024de1a7dce57f3dea2332cc3dd984bf9e
 
 # API keys and credentials
 *apikey*
