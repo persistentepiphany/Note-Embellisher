@@ -6,27 +6,55 @@ from fastapi import HTTPException
 from typing import Tuple
 import uuid
 from datetime import datetime
+import requests
 
 class DropboxService:
     def __init__(self):
         """Initialize Dropbox service with credentials from environment variables"""
         self.app_key = os.getenv('DROPBOX_APP_KEY')
         self.app_secret = os.getenv('DROPBOX_APP_SECRET')
-        self.access_token = os.getenv('DROPBOX_TOKEN')
+        self.refresh_token = os.getenv('DROPBOX_REFRESH_TOKEN')
+        self.access_token = None
         self.is_available = False
         self.dbx = None
         
-        if not self.access_token:
-            print("⚠️  Dropbox access token not found in environment variables")
+        if not self.refresh_token:
+            print("⚠️  Dropbox refresh token not found in environment variables")
             return
         
         try:
-            # Initialize Dropbox client with access token
-            self.dbx = dropbox.Dropbox(self.access_token)
-            self._check_credentials()
+            # Get fresh access token using refresh token
+            self._refresh_access_token()
+            if self.access_token:
+                # Initialize Dropbox client with fresh access token
+                self.dbx = dropbox.Dropbox(self.access_token)
+                self._check_credentials()
         except Exception as e:
             print(f"⚠️  Dropbox initialization failed: {e}")
             self.dbx = None
+
+    def _refresh_access_token(self):
+        """Get a fresh access token using the refresh token"""
+        try:
+            response = requests.post('https://api.dropbox.com/oauth2/token', data={
+                'grant_type': 'refresh_token',
+                'refresh_token': self.refresh_token,
+                'client_id': self.app_key,
+                'client_secret': self.app_secret
+            })
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                self.access_token = token_data['access_token']
+                print("✅ Dropbox access token refreshed successfully")
+                return True
+            else:
+                print(f"⚠️  Failed to refresh Dropbox token: {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"⚠️  Error refreshing Dropbox token: {e}")
+            return False
 
     def _check_credentials(self):
         """Check if Dropbox credentials are valid"""
@@ -36,8 +64,32 @@ class DropboxService:
             print("✅ Dropbox client initialized successfully")
         except AuthError as e:
             print(f"⚠️  Dropbox authentication failed: {e}")
-            print("⚠️  Image upload feature will be disabled. Text notes will still work.")
-            self.is_available = False
+            print("⚠️  Trying to refresh access token...")
+            if self._refresh_access_token():
+                # Reinitialize client with new token
+                self.dbx = dropbox.Dropbox(self.access_token)
+                try:
+                    self.dbx.users_get_current_account()
+                    self.is_available = True
+                    print("✅ Dropbox client re-initialized successfully with refreshed token")
+                except AuthError:
+                    print("⚠️  Image upload feature will be disabled. Text notes will still work.")
+                    self.is_available = False
+            else:
+                print("⚠️  Image upload feature will be disabled. Text notes will still work.")
+                self.is_available = False
+
+    def _retry_with_refresh(self, func, *args, **kwargs):
+        """Retry a Dropbox API call with token refresh if needed"""
+        try:
+            return func(*args, **kwargs)
+        except AuthError as e:
+            print(f"⚠️  Dropbox auth error, attempting token refresh: {e}")
+            if self._refresh_access_token():
+                self.dbx = dropbox.Dropbox(self.access_token)
+                return func(*args, **kwargs)
+            else:
+                raise HTTPException(status_code=503, detail="Failed to refresh Dropbox credentials")
 
     def upload_image(self, file_content: bytes, filename: str, user_id: str) -> Tuple[str, str]:
         """
@@ -66,11 +118,11 @@ class DropboxService:
             # Define Dropbox path: /Apps/NoteEmbellisher/{user_id}/{unique_filename}
             dropbox_path = f"/{user_id}/{unique_filename}"
             
-            # Upload file
-            self.dbx.files_upload(file_content, dropbox_path, mode=WriteMode('add'))
+            # Upload file with retry on auth failure
+            self._retry_with_refresh(self.dbx.files_upload, file_content, dropbox_path, mode=WriteMode('add'))
             
-            # Create a shareable link
-            sharing_settings = self.dbx.sharing_create_shared_link_with_settings(dropbox_path)
+            # Create a shareable link with retry on auth failure
+            sharing_settings = self._retry_with_refresh(self.dbx.sharing_create_shared_link_with_settings, dropbox_path)
             
             # Modify URL for direct access
             shareable_url = sharing_settings.url.replace("?dl=0", "?raw=1")
@@ -98,7 +150,7 @@ class DropboxService:
             )
             
         try:
-            _, res = self.dbx.files_download(path=dropbox_path)
+            _, res = self._retry_with_refresh(self.dbx.files_download, path=dropbox_path)
             return res.content
             
         except ApiError as e:
@@ -120,7 +172,7 @@ class DropboxService:
             return False
             
         try:
-            self.dbx.files_delete_v2(dropbox_path)
+            self._retry_with_refresh(self.dbx.files_delete_v2, dropbox_path)
             return True
         except ApiError as e:
             print(f"Error deleting from Dropbox: {e}")

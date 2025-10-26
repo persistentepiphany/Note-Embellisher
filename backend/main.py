@@ -69,14 +69,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     """
     try:
         decoded_token = auth.verify_id_token(token)
-<<<<<<< HEAD
-        return decoded_token
-    except auth.InvalidIdTokenError:
-        raise HTTPException(status_code=401, detail="Invalid ID token")
-    except auth.ExpiredIdTokenError:
-        raise HTTPException(status_code=401, detail="Expired ID token")
-    except Exception:
-=======
         print(f"🔐 User authenticated - UID: {decoded_token.get('uid', 'No UID found')}")
         print(f"🔐 User email: {decoded_token.get('email', 'No email found')}")
         return decoded_token
@@ -88,7 +80,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=401, detail="Expired ID token")
     except Exception as e:
         print(f"❌ Authentication failed: {str(e)}")
->>>>>>> 91459d024de1a7dce57f3dea2332cc3dd984bf9e
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 # ----------------------------------------------------
 
@@ -110,8 +101,6 @@ app.add_middleware(
 async def root():
     return {"message": "Note Embellisher API"}
 
-<<<<<<< HEAD
-=======
 @app.get("/debug/all-notes")
 async def debug_all_notes(db: Session = Depends(get_db)):
     """
@@ -135,7 +124,6 @@ async def debug_all_notes(db: Session = Depends(get_db)):
         ]
     }
 
->>>>>>> 91459d024de1a7dce57f3dea2332cc3dd984bf9e
 @app.post("/notes/", response_model=NoteResponse)
 async def create_note(
     note: NoteCreate, 
@@ -219,14 +207,10 @@ async def get_notes(
     Get all notes with pagination
     """
     # firebase-fix: Filter by user_id
-<<<<<<< HEAD
-    notes = db.query(Note).filter(Note.user_id == user["uid"]).offset(skip).limit(limit).all()
-=======
     user_id = user["uid"]
     print(f"📋 Fetching notes for user: {user_id}")
     notes = db.query(Note).filter(Note.user_id == user_id).offset(skip).limit(limit).all()
     print(f"📋 Found {len(notes)} notes for user {user_id}")
->>>>>>> 91459d024de1a7dce57f3dea2332cc3dd984bf9e
     
     return [
         NoteResponse(
