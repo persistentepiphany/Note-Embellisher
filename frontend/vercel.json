@@ -1,5 +1,14 @@
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+  "buildCommand": "./build.sh",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/"
+    }
   ]
 }
