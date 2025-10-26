@@ -16,7 +16,11 @@ const requiredEnvVars = [
 const missingVars = requiredEnvVars.filter(varName => !import.meta.env[varName]);
 if (missingVars.length > 0) {
   console.error('Missing required Firebase environment variables:', missingVars);
-  throw new Error(`Missing Firebase configuration: ${missingVars.join(', ')}`);
+  console.error('Available env vars:', Object.keys(import.meta.env).filter(key => key.startsWith('VITE_')));
+  // Don't throw in development, just warn
+  if (import.meta.env.PROD) {
+    throw new Error(`Missing Firebase configuration: ${missingVars.join(', ')}`);
+  }
 }
 
 // Your web app's Firebase configuration
