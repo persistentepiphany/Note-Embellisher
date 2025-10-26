@@ -91,15 +91,28 @@ app.add_middleware(
     allow_origins=["https://note-embellisher-2.web.app", 
                    "https://note-embellisher-2.firebaseapp.com",
                    "http://localhost:3000",
-                   "http://localhost:5173"],  # Vite dev server
+                   "http://localhost:3001", 
+                   "http://localhost:5173",  # Vite dev server
+                   "https://*.vercel.app",   # Vercel deployments
+                   "*"],  # Allow all origins for Railway testing
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.get("/")
 async def root():
-    return {"message": "Note Embellisher API"}
+    return {
+        "status": "ok",
+        "message": "Note Embellisher API",
+        "services": {
+            "database": DATABASE_AVAILABLE,
+            "firebase": FIREBASE_AVAILABLE,
+            "chatgpt": CHATGPT_AVAILABLE,
+            "dropbox": DROPBOX_AVAILABLE,
+            "ocr": OCR_AVAILABLE
+        }
+    }
 
 @app.get("/debug/all-notes")
 async def debug_all_notes(db: Session = Depends(get_db)):
@@ -468,5 +481,5 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
 if __name__ == "__main__":
     import uvicorn
     import os
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
