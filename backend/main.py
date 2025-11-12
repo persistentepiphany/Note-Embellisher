@@ -5,6 +5,7 @@ from typing import List, Optional
 import json
 from fastapi.security import OAuth2PasswordBearer
 import sys
+import os
 
 print("=" * 50)
 print("🚀 STARTING NOTE EMBELLISHER API")
@@ -135,11 +136,21 @@ async def startup_event():
     print("🚀 Running startup tasks...")
     
     # Initialize Firebase in background (non-blocking)
+    # Only initialize if explicitly enabled or credentials are available
     if FIREBASE_SDK_AVAILABLE and firebase_init_module:
         try:
-            firebase_init_module.initialize_firebase()
+            print("🔥 Attempting Firebase initialization...")
+            result = firebase_init_module.initialize_firebase()
+            if result:
+                print("✅ Firebase initialized successfully")
+            else:
+                print("⚠️ Firebase initialization skipped (no credentials)")
         except Exception as e:
-            print(f"⚠️ Firebase initialization failed: {e}")
+            print(f"⚠️ Firebase initialization failed (non-fatal): {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print("ℹ️ Firebase module not available - skipping initialization")
     
     print("✅ Startup tasks completed")
 
