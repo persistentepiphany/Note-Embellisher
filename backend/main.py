@@ -4,6 +4,13 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
 from fastapi.security import OAuth2PasswordBearer
+import sys
+
+print("=" * 50)
+print("🚀 STARTING NOTE EMBELLISHER API")
+print("=" * 50)
+print(f"Python version: {sys.version}")
+print(f"Working directory: {sys.path[0]}")
 
 # Optional Firebase - disable if not available
 try:
@@ -53,12 +60,22 @@ except ImportError as e:
     ocr_service = None
 
 # Optional Firebase SDK
+firebase_init_module = None
 try:
-    import firebasesdk  # Initialize Firebase
+    # First try the safe, committable version
+    import firebase_init as firebase_init_module
     FIREBASE_SDK_AVAILABLE = True
-except ImportError as e:
-    print(f"Firebase SDK not available: {e}")
-    FIREBASE_SDK_AVAILABLE = False
+    print("✅ Firebase init module imported")
+except ImportError:
+    try:
+        # Fall back to the legacy version if it exists
+        import firebasesdk as firebase_init_module
+        FIREBASE_SDK_AVAILABLE = True
+        print("✅ Firebase SDK module imported (legacy)")
+    except ImportError as e:
+        print(f"Firebase SDK not available: {e}")
+        FIREBASE_SDK_AVAILABLE = False
+        firebase_init_module = None
 
 # ----- firebase-fix: Add authentication dependency -----
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
@@ -89,9 +106,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         return {"uid": "test-user-id", "email": "test@example.com"}
 # ----------------------------------------------------
 
+print("✅ Creating FastAPI app...")
 app = FastAPI(title="Note Embellisher API", version="1.0.0")
+print("✅ FastAPI app created successfully")
 
 # Add CORS middleware
+print("✅ Adding CORS middleware...")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://note-embellisher-2.web.app", 
@@ -105,6 +125,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+print("✅ CORS middleware configured")
+print("✅ API is ready to accept requests")
+print("=" * 50)
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services after app startup to avoid blocking"""
+    print("🚀 Running startup tasks...")
+    
+    # Initialize Firebase in background (non-blocking)
+    if FIREBASE_SDK_AVAILABLE and firebase_init_module:
+        try:
+            firebase_init_module.initialize_firebase()
+        except Exception as e:
+            print(f"⚠️ Firebase initialization failed: {e}")
+    
+    print("✅ Startup tasks completed")
 
 @app.get("/")
 async def root():
