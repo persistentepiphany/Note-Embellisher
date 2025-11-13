@@ -1,22 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { exportToPDF, exportToWord, downloadTextFile } from '../utils/exportUtils';
+import { exportToWord, downloadTextFile } from '../utils/exportUtils';
 import { FormattedContent } from './FormattedContent';
+import { generatePDF } from '../services/apiService';
 
 interface ProcessingResultProps {
   originalNotes: string;
   processedNotes: string;
+  noteId?: number; // Optional note ID for PDF generation
   onStartOver: () => void;
 }
 
 export const ProcessingResult: React.FC<ProcessingResultProps> = ({
   originalNotes,
   processedNotes,
+  noteId,
   onStartOver,
 }) => {
   const navigate = useNavigate();
   const [showContent, setShowContent] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   useEffect(() => {
     // Trigger the fade-in animation
@@ -36,9 +40,26 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
 
   const handleExportPDF = async () => {
     try {
-      await exportToPDF(processedNotes, 'Enhanced Notes');
+      setPdfError(null);
+      
+      if (!noteId) {
+        setPdfError('Note ID is required to generate PDF. Please save your note first.');
+        return;
+      }
+      
+      // Call backend to generate LaTeX PDF
+      console.log(`Generating LaTeX PDF for note ${noteId}...`);
+      const result = await generatePDF(noteId);
+      
+      // Open the PDF in a new tab
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+      const pdfUrl = `${apiBaseUrl}${result.pdf_url}`;
+      window.open(pdfUrl, '_blank');
+      
+      console.log('PDF generated successfully:', result);
     } catch (error) {
-      alert(`Error exporting PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error generating PDF:', error);
+      setPdfError(error instanceof Error ? error.message : 'Failed to generate PDF. Please try again.');
     }
   };
 
@@ -130,6 +151,14 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
       {/* Export Options */}
       <div className="space-y-4 mb-6">
         <h4 className="text-lg font-medium text-slate-700">Export & Share Options</h4>
+        
+        {/* PDF Error Display */}
+        {pdfError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <p className="text-sm text-red-700">{pdfError}</p>
+          </div>
+        )}
+        
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <button 
             onClick={handleDownloadText} 
@@ -141,13 +170,19 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
             <span>Download TXT</span>
           </button>
           <button 
-            onClick={handleExportPDF} 
-            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+            onClick={handleExportPDF}
+            disabled={!noteId}
+            className={`${
+              noteId 
+                ? 'bg-red-500 hover:bg-red-600' 
+                : 'bg-gray-300 cursor-not-allowed'
+            } text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2`}
+            title={noteId ? 'Generate professional LaTeX PDF' : 'Save note first to generate PDF'}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <span>Export to PDF</span>
+            <span>Generate LaTeX PDF</span>
           </button>
           <button 
             onClick={handleExportWord}

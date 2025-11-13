@@ -8,8 +8,8 @@ import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getAllNotes, NoteResponse, deleteNote } from "../services/apiService";
-import { downloadTextFile, exportToPDF } from "../utils/exportUtils";
+import { getAllNotes, NoteResponse, deleteNote, generatePDF } from "../services/apiService";
+import { downloadTextFile } from "../utils/exportUtils";
 import { NoteCard } from "./NoteCard";
 import {
   Select,
@@ -86,11 +86,26 @@ export function Dashboard() {
 
   const handleExportNotePDF = async (note: NoteResponse) => {
     try {
-      const content = note.processed_content || note.text || "";
-      const title = `Note #${note.id}`;
-      await exportToPDF(content, title);
+      setError(null);
+      
+      // Check if note has processed content
+      if (!note.processed_content) {
+        setError('Note must be processed before generating PDF. Please wait for processing to complete.');
+        return;
+      }
+      
+      // Call backend to generate LaTeX PDF
+      console.log(`Generating LaTeX PDF for note ${note.id}...`);
+      const result = await generatePDF(note.id);
+      
+      // Open the PDF in a new tab
+      const pdfUrl = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${result.pdf_url}`;
+      window.open(pdfUrl, '_blank');
+      
+      console.log('PDF generated successfully:', result);
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to export PDF');
+      console.error('Error generating PDF:', error);
+      setError(error instanceof Error ? error.message : 'Failed to generate PDF. Please try again.');
     }
   };
 

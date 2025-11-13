@@ -68,7 +68,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({
               size="sm"
               onClick={() => onExportPDF(note)}
               className="h-8 w-8 p-0"
-              title="Export PDF"
+              title="Generate LaTeX PDF (professional formatting)"
+              disabled={note.status !== 'completed'}
             >
               <FileText className="h-4 w-4" />
             </Button>

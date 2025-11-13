@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import json
@@ -8,7 +9,7 @@ import sys
 import os
 
 print("=" * 50)
-print("🚀 STARTING NOTE EMBELLISHER API")
+print("STARTING NOTE EMBELLISHER API")
 print("=" * 50)
 print(f"Python version: {sys.version}")
 print(f"Working directory: {sys.path[0]}")
@@ -24,28 +25,28 @@ except ImportError as e:
 
 # Optional imports - make everything optional for minimal deployment
 try:
-    from database import get_db, Note
+    from core.database import get_db, Note
     DATABASE_AVAILABLE = True
 except ImportError as e:
     print(f"Database not available: {e}")
     DATABASE_AVAILABLE = False
 
 try:
-    from schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus, ProcessingSettingsSchema
+    from core.schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus, ProcessingSettingsSchema
     SCHEMAS_AVAILABLE = True
 except ImportError as e:
     print(f"Schemas not available: {e}")
     SCHEMAS_AVAILABLE = False
 
 try:
-    from chatgpt_service import chatgpt_service, ProcessingSettings
+    from services.chatgpt_service import chatgpt_service, ProcessingSettings
     CHATGPT_AVAILABLE = True
 except ImportError as e:
     print(f"ChatGPT service not available: {e}")
     CHATGPT_AVAILABLE = False
 
 try:
-    from dropbox_service import dropbox_service
+    from services.dropbox_service import dropbox_service
     DROPBOX_AVAILABLE = True
 except ImportError as e:
     print(f"Dropbox service not available: {e}")
@@ -53,12 +54,29 @@ except ImportError as e:
 
 # Optional OCR service - disable if not available
 try:
-    from ocr_service import ocr_service
+    from services.ocr_service import ocr_service
     OCR_AVAILABLE = True
 except ImportError as e:
     print(f"OCR service not available: {e}")
     OCR_AVAILABLE = False
     ocr_service = None
+
+# Optional LaTeX and PDF services
+try:
+    from pdf_generation.latex_service import latex_service
+    LATEX_AVAILABLE = True
+except ImportError as e:
+    print(f"LaTeX service not available: {e}")
+    LATEX_AVAILABLE = False
+    latex_service = None
+
+try:
+    from pdf_generation.pdf_compiler import pdf_compiler
+    PDF_COMPILER_AVAILABLE = True
+except ImportError as e:
+    print(f"PDF compiler not available: {e}")
+    PDF_COMPILER_AVAILABLE = False
+    pdf_compiler = None
 
 # Optional Firebase SDK
 firebase_init_module = None
@@ -66,13 +84,13 @@ try:
     # First try the safe, committable version
     import firebase_init as firebase_init_module
     FIREBASE_SDK_AVAILABLE = True
-    print("✅ Firebase init module imported")
+    print("Firebase init module imported")
 except ImportError:
     try:
         # Fall back to the legacy version if it exists
         import firebasesdk as firebase_init_module
         FIREBASE_SDK_AVAILABLE = True
-        print("✅ Firebase SDK module imported (legacy)")
+        print("Firebase SDK module imported (legacy)")
     except ImportError as e:
         print(f"Firebase SDK not available: {e}")
         FIREBASE_SDK_AVAILABLE = False
@@ -88,31 +106,31 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     """
     # If Firebase is not available, return a test user for development
     if not FIREBASE_AVAILABLE or auth is None:
-        print("⚠️ Firebase not available - using test user")
+        print("WARNING: Firebase not available - using test user")
         return {"uid": "test-user-id", "email": "test@example.com"}
     
     # If no token provided, return test user (for development)
     if not token:
-        print("⚠️ No token provided - using test user")
+        print("WARNING: No token provided - using test user")
         return {"uid": "test-user-id", "email": "test@example.com"}
     
     try:
         decoded_token = auth.verify_id_token(token)
-        print(f"🔐 User authenticated - UID: {decoded_token.get('uid', 'No UID found')}")
-        print(f"🔐 User email: {decoded_token.get('email', 'No email found')}")
+        print(f"User authenticated - UID: {decoded_token.get('uid', 'No UID found')}")
+        print(f"User email: {decoded_token.get('email', 'No email found')}")
         return decoded_token
     except Exception as e:
-        print(f"❌ Authentication failed: {str(e)} - using test user")
+        print(f"Authentication failed: {str(e)} - using test user")
         # Instead of raising error, return test user for development
         return {"uid": "test-user-id", "email": "test@example.com"}
 # ----------------------------------------------------
 
-print("✅ Creating FastAPI app...")
+print("Creating FastAPI app...")
 app = FastAPI(title="Note Embellisher API", version="1.0.0")
-print("✅ FastAPI app created successfully")
+print("FastAPI app created successfully")
 
 # Add CORS middleware
-print("✅ Adding CORS middleware...")
+print("Adding CORS middleware...")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://note-embellisher-2.web.app", 
@@ -126,33 +144,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-print("✅ CORS middleware configured")
-print("✅ API is ready to accept requests")
+print("CORS middleware configured")
+
+# Mount static files directory for serving generated PDFs
+print("Mounting static files for PDF serving...")
+generated_pdfs_dir = os.path.join(os.path.dirname(__file__), "generated_pdfs")
+os.makedirs(generated_pdfs_dir, exist_ok=True)
+app.mount("/generated_pdfs", StaticFiles(directory=generated_pdfs_dir), name="generated_pdfs")
+print(f"Static files mounted: {generated_pdfs_dir}")
+
+print("API is ready to accept requests")
 print("=" * 50)
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services after app startup to avoid blocking"""
-    print("🚀 Running startup tasks...")
+    print("Running startup tasks...")
     
     # Initialize Firebase in background (non-blocking)
     # Only initialize if explicitly enabled or credentials are available
     if FIREBASE_SDK_AVAILABLE and firebase_init_module:
         try:
-            print("🔥 Attempting Firebase initialization...")
+            print("Attempting Firebase initialization...")
             result = firebase_init_module.initialize_firebase()
             if result:
-                print("✅ Firebase initialized successfully")
+                print("Firebase initialized successfully")
             else:
-                print("⚠️ Firebase initialization skipped (no credentials)")
+                print("WARNING: Firebase initialization skipped (no credentials)")
         except Exception as e:
-            print(f"⚠️ Firebase initialization failed (non-fatal): {e}")
+            print(f"WARNING: Firebase initialization failed (non-fatal): {e}")
             import traceback
             traceback.print_exc()
     else:
-        print("ℹ️ Firebase module not available - skipping initialization")
+        print("INFO: Firebase module not available - skipping initialization")
     
-    print("✅ Startup tasks completed")
+    print("Startup tasks completed")
 
 @app.get("/")
 async def root():
@@ -164,7 +190,9 @@ async def root():
             "firebase": FIREBASE_AVAILABLE,
             "chatgpt": CHATGPT_AVAILABLE,
             "dropbox": DROPBOX_AVAILABLE,
-            "ocr": OCR_AVAILABLE
+            "ocr": OCR_AVAILABLE,
+            "latex": LATEX_AVAILABLE,
+            "pdf_compiler": PDF_COMPILER_AVAILABLE
         }
     }
 
@@ -279,9 +307,9 @@ async def get_notes(
     """
     # firebase-fix: Filter by user_id
     user_id = user["uid"]
-    print(f"📋 Fetching notes for user: {user_id}")
+    print(f"Fetching notes for user: {user_id}")
     notes = db.query(Note).filter(Note.user_id == user_id).offset(skip).limit(limit).all()
-    print(f"📋 Found {len(notes)} notes for user {user_id}")
+    print(f"Found {len(notes)} notes for user {user_id}")
     
     return [
         NoteResponse(
@@ -421,11 +449,120 @@ async def upload_image_note(
         print(f"Error uploading image: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to upload image: {str(e)}")
 
+@app.post("/notes/{note_id}/generate-pdf")
+async def generate_pdf(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Generate a professional PDF from a note's processed content.
+    OpenAI converts the content to LaTeX, then compiles to PDF.
+    Works with any subject matter - math, science, humanities, etc.
+    """
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    if not LATEX_AVAILABLE or not PDF_COMPILER_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail="PDF generation services not available"
+        )
+    
+    # Get the note
+    db_note = db.query(Note).filter(
+        Note.id == note_id,
+        Note.user_id == current_user["uid"]
+    ).first()
+    
+    if not db_note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    
+    # Check if note has been processed
+    if not db_note.processed_content:
+        raise HTTPException(
+            status_code=400, 
+            detail="Note must be processed before generating PDF"
+        )
+    
+    try:
+        # Simple metadata
+        title = f"Note {note_id}"
+        author = current_user.get("email", "Student")
+        
+        # Use the processed content (already enhanced by ChatGPT)
+        content = db_note.processed_content
+        
+        print(f"Generating LaTeX document for note {note_id}")
+        print(f"Content length to convert: {len(content)} characters")
+        
+        # Let OpenAI handle ALL formatting - it will determine subject, structure, math, etc.
+        latex_content = latex_service.generate_latex_document(
+            content=content,
+            title=title,
+            author=author
+        )
+        
+        print(f"LaTeX generation complete. Length: {len(latex_content)} characters")
+        print(f"Compiling PDF for note {note_id}")
+        
+        # Compile to PDF
+        pdf_path, tex_path, error = pdf_compiler.compile_to_pdf(
+            latex_content=latex_content,
+            output_filename=f"note_{note_id}_{current_user['uid'][:8]}",
+            save_tex=True
+        )
+        
+        if error or not pdf_path:
+            raise HTTPException(
+                status_code=500,
+                detail=f"PDF compilation failed: {error}"
+            )
+        
+        print(f"PDF generated successfully: {pdf_path}")
+        
+        # Read the .tex file to include in response for debugging
+        tex_content_preview = None
+        if tex_path and os.path.exists(tex_path):
+            try:
+                with open(tex_path, 'r', encoding='utf-8') as f:
+                    tex_full = f.read()
+                    tex_content_preview = {
+                        "length": len(tex_full),
+                        "first_500": tex_full[:500],
+                        "last_500": tex_full[-500:],
+                        "has_end_document": "\\end{document}" in tex_full
+                    }
+            except Exception as e:
+                print(f"Could not read .tex file for preview: {e}")
+        
+        # Return PDF information
+        return {
+            "success": True,
+            "note_id": note_id,
+            "pdf_path": pdf_path,
+            "tex_path": tex_path,
+            "pdf_url": pdf_compiler.get_pdf_url(pdf_path),
+            "message": "PDF generated successfully",
+            "tex_preview": tex_content_preview  # For debugging
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error generating PDF for note {note_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate PDF: {str(e)}"
+        )
+
 async def process_note_background(note_id: int, settings):
     """
     Background task to process note with ChatGPT
     """
-    from database import SessionLocal
+    from core.database import SessionLocal
     db = SessionLocal()
     db_note = None
     try:
@@ -468,7 +605,7 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
     """
     Background task to process image note with OCR and ChatGPT
     """
-    from database import SessionLocal
+    from core.database import SessionLocal
     db = SessionLocal()
     db_note = None
     try:
@@ -528,7 +665,7 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         if db_note:
             db_note.status = ProcessingStatus.ERROR
             # Store the error message in processed_content so frontend can display it
-            db_note.processed_content = f"❌ Processing failed: {error_message}"
+            db_note.processed_content = f"Processing failed: {error_message}"
             # Also ensure text field has content to prevent null issues
             if not db_note.text:
                 db_note.text = "[Image processing failed - no text extracted]"
@@ -542,7 +679,7 @@ if __name__ == "__main__":
     
     # Get PORT from environment variable (for Railway/Render)
     port = int(os.environ.get("PORT", 8000))
-    print(f"🚀 Starting server on host=0.0.0.0 port={port}")
+    print(f"Starting server on host=0.0.0.0 port={port}")
     
     # Bind to 0.0.0.0 to accept external connections
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

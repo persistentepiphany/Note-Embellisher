@@ -248,6 +248,7 @@ export const NoteSubmission: React.FC = () => {
             <ProcessingResult
               originalNotes={notes}
               processedNotes={processedNotes}
+              noteId={currentNote?.id}
               onStartOver={handleStartOver}
             />
           )}

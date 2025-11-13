@@ -58,7 +58,7 @@ import numpy as np
 import cv2  # OpenCV for advanced image preprocessing
 from PIL import Image
 import fitz  # PyMuPDF for PDF processing
-from dropbox_service import dropbox_service
+from services.dropbox_service import dropbox_service
 from openai import OpenAI
 from dotenv import load_dotenv
 

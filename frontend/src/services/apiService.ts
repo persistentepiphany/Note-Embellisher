@@ -209,3 +209,32 @@ export const pollNoteStatus = async (
     poll();
   });
 };
+
+export interface GeneratePDFResponse {
+  success: boolean;
+  note_id: number;
+  pdf_path: string;
+  tex_path?: string;
+  pdf_url: string;
+  message: string;
+}
+
+export const generatePDF = async (noteId: number): Promise<GeneratePDFResponse> => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/generate-pdf`, {
+      method: 'POST',
+      headers: headers,
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to generate PDF');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    throw error;
+  }
+};
