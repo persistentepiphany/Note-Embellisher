@@ -415,13 +415,22 @@ async def upload_image_note(
         db.commit()
         db.refresh(db_note)
         
-        # Add background task to process the image with OCR
-        background_tasks.add_task(
-            process_image_note_background, 
-            db_note.id, 
-            dropbox_path, 
-            processing_settings
-        )
+        # Route PDFs through the OCR pipeline since GPT-4 Vision does not accept them
+        if image_type == "pdf":
+            background_tasks.add_task(
+                process_image_note_background,
+                db_note.id,
+                dropbox_path,
+                processing_settings
+            )
+        else:
+            # Use GPT-4 Vision for better handwriting recognition on image inputs
+            background_tasks.add_task(
+                process_multiple_images_background,
+                db_note.id,
+                [shareable_url],  # Pass as a list with single image
+                processing_settings
+            )
         
         # Return the created note
         return NoteResponse(
@@ -448,6 +457,126 @@ async def upload_image_note(
     except Exception as e:
         print(f"Error uploading image: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to upload image: {str(e)}")
+
+@app.post("/upload-multiple-images/", response_model=NoteResponse)
+async def upload_multiple_images(
+    files: List[UploadFile] = File(...),
+    settings: str = Form(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Upload multiple images (up to 5), store in Dropbox, and process with GPT-4 Vision
+    """
+    try:
+        # Validate number of files
+        if len(files) < 1 or len(files) > 5:
+            raise HTTPException(
+                status_code=400,
+                detail="Please upload between 1 and 5 images"
+            )
+        
+        # Parse settings
+        try:
+            settings_dict = json.loads(settings)
+            processing_settings = ProcessingSettings(**settings_dict)
+        except (json.JSONDecodeError, TypeError) as e:
+            raise HTTPException(status_code=400, detail="Invalid settings format")
+        
+        # Validate and upload all files
+        image_urls = []
+        image_paths = []
+        filenames = []
+        
+        for idx, file in enumerate(files):
+            # Validate file type
+            if not dropbox_service.validate_file_type(file.filename, file.content_type):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid file type for {file.filename}. Only PNG, JPG, JPEG, and PDF files are allowed."
+                )
+            # GPT-4 Vision currently cannot consume PDFs. Require users to upload them individually
+            file_extension = os.path.splitext(file.filename)[1].lower()
+            if file_extension == ".pdf":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{file.filename} is a PDF. Please upload PDFs one at a time so we can run the OCR pipeline."
+                )
+            
+            # Check file size (limit to 10MB per file)
+            file_content = await file.read()
+            if len(file_content) > 10 * 1024 * 1024:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File {file.filename} is too large. Maximum size is 10MB per file."
+                )
+            
+            # Upload to Dropbox
+            shareable_url, dropbox_path = dropbox_service.upload_image(
+                file_content, file.filename, user["uid"]
+            )
+            
+            image_urls.append(shareable_url)
+            image_paths.append(dropbox_path)
+            filenames.append(file.filename)
+        
+        # Create note in database
+        db_note = Note(
+            user_id=user["uid"],
+            text=None,  # Will be populated after GPT-4 Vision processing
+            settings_json=json.dumps({
+                "add_bullet_points": processing_settings.add_bullet_points,
+                "add_headers": processing_settings.add_headers,
+                "expand": processing_settings.expand,
+                "summarize": processing_settings.summarize
+            }),
+            status=ProcessingStatus.PROCESSING,
+            input_type="images",  # Note the plural
+            image_url=image_urls[0],  # Store first image URL
+            image_path=json.dumps(image_paths),  # Store all paths as JSON
+            image_filename=", ".join(filenames),
+            image_type="multiple_images"
+        )
+        db.add(db_note)
+        db.commit()
+        db.refresh(db_note)
+        
+        # Add background task to process images with GPT-4 Vision
+        background_tasks.add_task(
+            process_multiple_images_background,
+            db_note.id,
+            image_urls,
+            processing_settings
+        )
+        
+        # Return the created note
+        return NoteResponse(
+            id=db_note.id,
+            text=db_note.text,
+            settings=ProcessingSettingsSchema(
+                add_bullet_points=processing_settings.add_bullet_points,
+                add_headers=processing_settings.add_headers,
+                expand=processing_settings.expand,
+                summarize=processing_settings.summarize
+            ),
+            processed_content=db_note.processed_content,
+            status=db_note.status,
+            image_url=db_note.image_url,
+            image_filename=db_note.image_filename,
+            image_type=db_note.image_type,
+            input_type=db_note.input_type,
+            created_at=db_note.created_at,
+            updated_at=db_note.updated_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error uploading multiple images: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to upload images: {str(e)}")
 
 @app.post("/notes/{note_id}/generate-pdf")
 async def generate_pdf(
@@ -669,6 +798,84 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
             # Also ensure text field has content to prevent null issues
             if not db_note.text:
                 db_note.text = "[Image processing failed - no text extracted]"
+            db.commit()
+    finally:
+        db.close()
+
+async def process_multiple_images_background(note_id: int, image_urls: List[str], settings):
+    """
+    Background task to process multiple images with GPT-4 Vision
+    """
+    from core.database import SessionLocal
+    db = SessionLocal()
+    db_note = None
+    try:
+        # Get the note from database
+        db_note = db.query(Note).filter(Note.id == note_id).first()
+        if not db_note:
+            print(f"Note {note_id} not found")
+            return
+
+        if db_note.image_type == "pdf":
+            print(f"Note {note_id} is a PDF. Delegating to OCR pipeline instead of GPT-4 Vision.")
+            return await process_image_note_background(
+                note_id,
+                db_note.image_path,
+                settings
+            )
+        
+        print(f"Starting GPT-4 Vision processing for note {note_id} with {len(image_urls)} images")
+        
+        # Check if ChatGPT service is available
+        if not CHATGPT_AVAILABLE or chatgpt_service is None:
+            raise Exception("ChatGPT service is not available in this deployment")
+        
+        # Convert settings to ProcessingSettings object
+        processing_settings = ProcessingSettings(
+            add_bullet_points=settings.add_bullet_points,
+            add_headers=settings.add_headers,
+            expand=settings.expand,
+            summarize=settings.summarize
+        )
+        
+        # Get the actual Dropbox paths from the note
+        # For single images, image_path is a string. For multiple, it's JSON array
+        try:
+            dropbox_paths = json.loads(db_note.image_path) if db_note.image_type == "multiple_images" else [db_note.image_path]
+        except:
+            dropbox_paths = [db_note.image_path]
+        
+        print(f"Dropbox paths: {dropbox_paths}")
+        
+        # Process images with GPT-4 Vision, passing Dropbox paths instead of URLs
+        processed_content = await chatgpt_service.process_images_with_gpt4_vision(
+            dropbox_paths,
+            processing_settings,
+            use_dropbox_path=True  # Flag to indicate these are Dropbox paths
+        )
+        
+        print(f"GPT-4 Vision processing completed for note {note_id}")
+        
+        # Update the note with processed content
+        # For multi-image notes, we store the enhanced content directly
+        db_note.text = f"Processed {len(image_urls)} images with GPT-4 Vision"
+        db_note.processed_content = processed_content
+        db_note.status = ProcessingStatus.COMPLETED
+        db.commit()
+        print(f"Successfully processed multiple images for note {note_id}")
+        
+    except Exception as e:
+        # Update status to error and provide detailed error message
+        error_message = str(e)
+        print(f"Error processing multiple images for note {note_id}: {error_message}")
+        import traceback
+        traceback.print_exc()
+        
+        if db_note:
+            db_note.status = ProcessingStatus.ERROR
+            db_note.processed_content = f"Processing failed: {error_message}"
+            if not db_note.text:
+                db_note.text = "[Multiple image processing failed]"
             db.commit()
     finally:
         db.close()

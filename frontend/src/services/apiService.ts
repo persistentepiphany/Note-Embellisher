@@ -175,6 +175,51 @@ export const uploadImageNote = async (
   }
 };
 
+export const uploadMultipleImages = async (
+  files: File[],
+  settings: ProcessingSettings
+): Promise<NoteResponse> => {
+  try {
+    const auth = getAuth();
+    const user = auth.currentUser;
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    const token = await user.getIdToken();
+    
+    // Create FormData for multiple file upload
+    const formData = new FormData();
+    
+    // Append each file with the same field name (FastAPI will collect them as a list)
+    files.forEach(file => {
+      formData.append('files', file);
+    });
+    
+    formData.append('settings', JSON.stringify(settings));
+
+    const response = await fetch(`${API_BASE_URL}/upload-multiple-images/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // Don't set Content-Type header - let browser set it with boundary for FormData
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to upload images');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error uploading multiple images:', error);
+    throw error;
+  }
+};
+
 export const pollNoteStatus = async (
   noteId: number, 
   onUpdate: (note: NoteResponse) => void,

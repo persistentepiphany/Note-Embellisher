@@ -6,7 +6,7 @@ import { NoteConfigStep } from './NoteConfigStep';
 import { ProcessingResult } from './ProcessingResult';
 import { ErrorDisplay } from './ErrorDisplay';
 import { ProcessingConfig, defaultConfig } from '../types/config';
-import { createNote, uploadImageNote, pollNoteStatus, NoteResponse } from '../services/apiService';
+import { createNote, uploadImageNote, uploadMultipleImages, pollNoteStatus, NoteResponse } from '../services/apiService';
 import { Button } from './ui/button';
 
 type Step = 'upload' | 'config' | 'result';
@@ -16,7 +16,7 @@ export const NoteSubmission: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [notes, setNotes] = useState('');
   const [uploadMode, setUploadMode] = useState<'text' | 'image'>('text');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [config, setConfig] = useState<ProcessingConfig>(defaultConfig);
   const [processedNotes, setProcessedNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -48,8 +48,8 @@ export const NoteSubmission: React.FC = () => {
       return;
     }
     
-    if (uploadMode === 'image' && !selectedFile) {
-      setError('Please select an image file to process');
+    if (uploadMode === 'image' && selectedFiles.length === 0) {
+      setError('Please select at least one image file to process');
       return;
     }
 
@@ -59,12 +59,18 @@ export const NoteSubmission: React.FC = () => {
       
       let noteResponse: NoteResponse;
       
-      if (uploadMode === 'image' && selectedFile) {
-        setProcessingStatus('Uploading image...');
-        
-        // Upload image and create note
-        noteResponse = await uploadImageNote(selectedFile, config);
-        setProcessingStatus('Extracting text from image...');
+      if (uploadMode === 'image' && selectedFiles.length > 0) {
+        if (selectedFiles.length === 1) {
+          // Single image - use the original endpoint
+          setProcessingStatus('Uploading image...');
+          noteResponse = await uploadImageNote(selectedFiles[0], config);
+          setProcessingStatus('Extracting text from image...');
+        } else {
+          // Multiple images - use the new endpoint
+          setProcessingStatus(`Uploading ${selectedFiles.length} images...`);
+          noteResponse = await uploadMultipleImages(selectedFiles, config);
+          setProcessingStatus('Processing images with GPT-4 Vision...');
+        }
         
       } else {
         setProcessingStatus('Creating note...');
@@ -88,7 +94,9 @@ export const NoteSubmission: React.FC = () => {
           if (updatedNote.status === 'processing') {
             const message = updatedNote.progress_message || 
               (uploadMode === 'image' 
-                ? 'Processing with OCR and ChatGPT...' 
+                ? selectedFiles.length > 1
+                  ? 'Processing multiple images with GPT-4 Vision...'
+                  : 'Processing with OCR and ChatGPT...'
                 : 'Processing with ChatGPT...');
             setProcessingStatus(message);
           }
@@ -125,7 +133,7 @@ export const NoteSubmission: React.FC = () => {
     setCurrentStep('upload');
     setNotes('');
     setUploadMode('text');
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setConfig(defaultConfig);
     setProcessedNotes('');
     setError(null);
@@ -230,7 +238,7 @@ export const NoteSubmission: React.FC = () => {
               onNext={handleNext}
               uploadMode={uploadMode}
               onUploadModeChange={setUploadMode}
-              onFileSelect={setSelectedFile}
+              onFilesSelect={setSelectedFiles}
             />
           )}
 

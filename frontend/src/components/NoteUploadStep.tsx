@@ -6,7 +6,7 @@ interface NoteUploadStepProps {
   onNext: () => void;
   uploadMode: 'text' | 'image';
   onUploadModeChange: (mode: 'text' | 'image') => void;
-  onFileSelect?: (file: File) => void;
+  onFilesSelect?: (files: File[]) => void;
 }
 
 interface FileValidationResult {
@@ -20,11 +20,13 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
   onNext,
   uploadMode,
   onUploadModeChange,
-  onFileSelect
+  onFilesSelect
 }) => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+
+  const MAX_FILES = 5;
 
   const validateFile = (file: File): FileValidationResult => {
     // Check file size (10MB max)
@@ -49,30 +51,50 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
     return { isValid: true };
   };
 
-  const handleFileSelection = (file: File) => {
-    const validation = validateFile(file);
+  const handleFileSelection = (files: FileList) => {
+    const fileArray = Array.from(files);
     
-    if (!validation.isValid) {
-      setFileError(validation.error || 'Invalid file');
-      setSelectedFile(null);
+    // Check if adding these files would exceed the limit
+    if (selectedFiles.length + fileArray.length > MAX_FILES) {
+      setFileError(`You can only upload up to ${MAX_FILES} images at once`);
       return;
     }
 
+    // Validate all files
+    const validFiles: File[] = [];
+    for (const file of fileArray) {
+      const validation = validateFile(file);
+      if (!validation.isValid) {
+        setFileError(validation.error || 'Invalid file');
+        return;
+      }
+      validFiles.push(file);
+    }
+
+    // Add to selected files
+    const newFiles = [...selectedFiles, ...validFiles];
     setFileError(null);
-    setSelectedFile(file);
-    onNotesChange(`Selected file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    setSelectedFiles(newFiles);
+    
+    // Update notes display
+    const totalSize = newFiles.reduce((sum, f) => sum + f.size, 0);
+    onNotesChange(
+      `Selected ${newFiles.length} file(s): ${newFiles.map(f => f.name).join(', ')} (Total: ${(totalSize / 1024 / 1024).toFixed(2)} MB)`
+    );
     
     // Notify parent component about file selection
-    if (onFileSelect) {
-      onFileSelect(file);
+    if (onFilesSelect) {
+      onFilesSelect(newFiles);
     }
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      handleFileSelection(file);
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      handleFileSelection(files);
     }
+    // Reset input so same file can be selected again
+    event.target.value = '';
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
@@ -91,11 +113,41 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
     
     const files = event.dataTransfer.files;
     if (files.length > 0) {
-      handleFileSelection(files[0]);
+      handleFileSelection(files);
     }
   };
 
-  const canProceed = uploadMode === 'text' ? notes.trim().length > 0 : selectedFile !== null;
+  const removeFile = (index: number) => {
+    const newFiles = selectedFiles.filter((_, i) => i !== index);
+    setSelectedFiles(newFiles);
+    
+    if (newFiles.length === 0) {
+      onNotesChange('');
+      if (onFilesSelect) {
+        onFilesSelect([]);
+      }
+    } else {
+      const totalSize = newFiles.reduce((sum, f) => sum + f.size, 0);
+      onNotesChange(
+        `Selected ${newFiles.length} file(s): ${newFiles.map(f => f.name).join(', ')} (Total: ${(totalSize / 1024 / 1024).toFixed(2)} MB)`
+      );
+      if (onFilesSelect) {
+        onFilesSelect(newFiles);
+      }
+    }
+    setFileError(null);
+  };
+
+  const clearAllFiles = () => {
+    setSelectedFiles([]);
+    onNotesChange('');
+    setFileError(null);
+    if (onFilesSelect) {
+      onFilesSelect([]);
+    }
+  };
+
+  const canProceed = uploadMode === 'text' ? notes.trim().length > 0 : selectedFiles.length > 0;
 
   return (
     <div className="w-full mx-auto bg-white/80 backdrop-blur-sm border-orange-200/50 border rounded-xl shadow-lg p-6">
@@ -152,14 +204,22 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
           </div>
         ) : (
           <div className="space-y-4">
-            <label className="block text-sm font-medium text-gray-700">
-              Upload image of your notes
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700">
+                Upload images of your notes (up to {MAX_FILES})
+              </label>
+              {selectedFiles.length > 0 && (
+                <span className="text-sm text-orange-600 font-medium">
+                  {selectedFiles.length} / {MAX_FILES} files
+                </span>
+              )}
+            </div>
+            
             <div 
               className={`border-2 border-dashed rounded-lg p-8 text-center relative transition-all duration-200 ${
                 isDragOver 
                   ? 'border-orange-400 bg-orange-100/50' 
-                  : selectedFile
+                  : selectedFiles.length > 0
                     ? 'border-green-300 bg-green-50/30'
                     : 'border-orange-200 bg-orange-50/30 hover:bg-orange-50/50'
               }`}
@@ -167,27 +227,39 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
-              {selectedFile ? (
+              {selectedFiles.length > 0 ? (
                 <div className="space-y-3">
                   <svg className="w-12 h-12 mx-auto text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <div className="space-y-1">
-                    <p className="text-green-700 font-medium">{selectedFile.name}</p>
+                    <p className="text-green-700 font-medium">
+                      {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+                    </p>
                     <p className="text-sm text-green-600">
-                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • Ready to process
+                      {(selectedFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)} MB total • Ready to process
                     </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setSelectedFile(null);
-                      onNotesChange('');
-                      setFileError(null);
-                    }}
-                    className="text-sm text-orange-600 hover:text-orange-700 underline"
-                  >
-                    Choose different file
-                  </button>
+                  <div className="flex gap-2 justify-center">
+                    {selectedFiles.length < MAX_FILES && (
+                      <label className="text-sm text-orange-600 hover:text-orange-700 underline cursor-pointer">
+                        Add more files
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/jpg,application/pdf"
+                          onChange={handleFileUpload}
+                          multiple
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                    <button
+                      onClick={clearAllFiles}
+                      className="text-sm text-red-600 hover:text-red-700 underline"
+                    >
+                      Clear all
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -196,10 +268,13 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
                   </svg>
                   <div className="space-y-2">
                     <p className="text-gray-600">
-                      {isDragOver ? 'Drop your file here' : 'Click to upload or drag and drop'}
+                      {isDragOver ? 'Drop your files here' : 'Click to upload or drag and drop'}
                     </p>
                     <p className="text-sm text-gray-500">
-                      PNG, JPG, JPEG, or PDF up to 10MB
+                      PNG, JPG, JPEG, or PDF up to 10MB each
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      Upload up to {MAX_FILES} images at once
                     </p>
                   </div>
                 </>
@@ -208,6 +283,7 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
                 type="file"
                 accept="image/png,image/jpeg,image/jpg,application/pdf"
                 onChange={handleFileUpload}
+                multiple
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
             </div>
@@ -218,13 +294,48 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
               </div>
             )}
             
-            {selectedFile && (
-              <div className="p-4 bg-amber-50/70 rounded-lg border border-amber-200">
-                <label className="block text-sm font-medium text-amber-800 mb-2">File selected:</label>
-                <p className="text-sm text-amber-700">{notes}</p>
-                <p className="text-xs text-amber-600 mt-1">
-                  Text will be extracted automatically using OCR technology
-                </p>
+            {selectedFiles.length > 0 && (
+              <div className="space-y-3">
+                <div className="p-4 bg-amber-50/70 rounded-lg border border-amber-200">
+                  <label className="block text-sm font-medium text-amber-800 mb-2">
+                    Selected files ({selectedFiles.length}):
+                  </label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {selectedFiles.map((file, index) => (
+                      <div 
+                        key={index}
+                        className="flex items-center justify-between p-2 bg-white/70 rounded border border-amber-200"
+                      >
+                        <div className="flex items-center space-x-2 flex-1 min-w-0">
+                          <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-amber-900 truncate">{file.name}</p>
+                            <p className="text-xs text-amber-600">
+                              {(file.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="ml-2 p-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded flex-shrink-0"
+                          title="Remove file"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-amber-600 mt-3">
+                    {selectedFiles.length > 1 
+                      ? 'All images will be processed together using GPT-4 Vision for accurate handwriting recognition and enhancement'
+                      : 'Image will be processed using GPT-4 Vision for handwriting recognition and enhancement'
+                    }
+                  </p>
+                </div>
               </div>
             )}
           </div>

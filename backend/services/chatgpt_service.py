@@ -1,7 +1,9 @@
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from openai import OpenAI
 from dotenv import load_dotenv
+import base64
+import requests
 
 # Load environment variables
 load_dotenv()
@@ -34,6 +36,193 @@ class ChatGPTService:
         except Exception as e:
             print(f"❌ Failed to initialize OpenAI client: {e}")
             self.client = None
+    
+    def _download_and_encode_image(self, image_source: str, use_dropbox_path: bool = False) -> str:
+        """
+        Download image and encode as base64 for GPT-4 Vision
+        
+        Args:
+            image_source: Either a URL or Dropbox path
+            use_dropbox_path: If True, image_source is a Dropbox path and we'll use dropbox_service
+            
+        Returns:
+            Base64 encoded image data URL
+        """
+        try:
+            if use_dropbox_path:
+                # Download from Dropbox using the service
+                from services.dropbox_service import dropbox_service
+                print(f"  Downloading from Dropbox: {image_source}")
+                image_content = dropbox_service.download_image_for_ocr(image_source)
+            else:
+                # Download from URL
+                print(f"  Downloading from URL: {image_source}")
+                response = requests.get(image_source, timeout=30)
+                response.raise_for_status()
+                image_content = response.content
+            
+            # Detect image type from content (magic bytes)
+            if image_content.startswith(b'\x89PNG'):
+                mime_type = 'image/png'
+            elif image_content.startswith(b'\xff\xd8'):
+                mime_type = 'image/jpeg'
+            elif image_content.startswith(b'GIF'):
+                mime_type = 'image/gif'
+            else:
+                # Check file extension from source
+                if image_source.lower().endswith('.png'):
+                    mime_type = 'image/png'
+                else:
+                    mime_type = 'image/jpeg'  # Default fallback
+            
+            print(f"  Detected mime type: {mime_type}, size: {len(image_content)} bytes")
+            
+            # Encode to base64
+            image_base64 = base64.b64encode(image_content).decode('utf-8')
+            
+            # Return as data URL
+            return f"data:{mime_type};base64,{image_base64}"
+            
+        except Exception as e:
+            print(f"❌ Error downloading/encoding image {image_source}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(f"Failed to download image: {str(e)}")
+    
+    async def process_images_with_gpt4_vision(
+        self, 
+        image_sources: List[str], 
+        settings: ProcessingSettings,
+        use_dropbox_path: bool = False
+    ) -> str:
+        """
+        Process multiple images (up to 5) using GPT-4 Vision API for OCR, 
+        spell checking, and content enhancement
+        
+        Args:
+            image_sources: List of image URLs or Dropbox paths
+            settings: Processing settings
+            use_dropbox_path: If True, image_sources are Dropbox paths
+        """
+        if not self.client:
+            print("⚠️ OpenAI client not available, using fallback")
+            return "OpenAI client not available. Please configure OPENAI_API_KEY."
+        
+        if not image_sources or len(image_sources) > 5:
+            raise ValueError("Please provide between 1 and 5 images")
+        
+        try:
+            # Create message content with all images
+            message_content = [
+                {
+                    "type": "text",
+                    "text": self._generate_vision_prompt(settings, len(image_sources))
+                }
+            ]
+            
+            # Download and encode each image as base64
+            print(f"Downloading and encoding {len(image_sources)} image(s)...")
+            for idx, image_source in enumerate(image_sources):
+                print(f"  Processing image {idx + 1}/{len(image_sources)}...")
+                base64_image = self._download_and_encode_image(image_source, use_dropbox_path)
+                message_content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": base64_image,
+                        "detail": "high"  # Use high detail for better OCR
+                    }
+                })
+            
+            print(f"Sending {len(image_sources)} image(s) to GPT-4 Vision...")
+            
+            response = self.client.chat.completions.create(
+                model="gpt-4o",  # GPT-4 Vision model
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """You are an expert at reading handwritten and typed notes from images. Your specialty is:
+- Accurately transcribing handwritten text, including cursive and messy handwriting
+- Understanding context and correcting spelling errors
+- Organizing notes with proper structure and formatting
+- Enhancing content with additional context and explanations
+- Combining multiple pages of notes into a coherent document"""
+                    },
+                    {
+                        "role": "user",
+                        "content": message_content
+                    }
+                ],
+                max_tokens=4000,
+                temperature=0.7
+            )
+            
+            print("✅ GPT-4 Vision processing successful")
+            return response.choices[0].message.content
+        
+        except Exception as e:
+            print(f"❌ Error processing images with GPT-4 Vision: {str(e)}")
+            raise Exception(f"Failed to process images: {str(e)}")
+    
+    def _generate_vision_prompt(self, settings: ProcessingSettings, num_images: int) -> str:
+        """
+        Generate prompt for GPT-4 Vision based on settings and number of images
+        """
+        base_prompt = f"""I have uploaded {num_images} image(s) of my handwritten/typed notes. Please:
+
+1. **Extract and Transcribe**: Carefully read ALL the text from {"each image" if num_images > 1 else "the image"}, including handwritten text. Transcribe everything accurately.
+
+2. **Spell Check**: Fix any spelling errors you notice in the transcribed text.
+
+3. **Enhance and Format**: Transform the notes into a well-organized, comprehensive document.
+"""
+        
+        formatting_instructions = []
+        
+        if settings.add_bullet_points:
+            formatting_instructions.append(
+                "- Use bullet points (•) and numbered lists to organize information clearly"
+            )
+        
+        if settings.add_headers:
+            formatting_instructions.append(
+                "- Add descriptive section headers to create a clear structure"
+            )
+            formatting_instructions.append(
+                "- Use visual dividers (═══) between major sections"
+            )
+        
+        if settings.expand:
+            formatting_instructions.append(
+                "- Expand the content with additional context and explanations"
+            )
+            formatting_instructions.append(
+                "- Add relevant examples or practical applications"
+            )
+        
+        if settings.summarize:
+            formatting_instructions.append(
+                "- Include a summary section at the beginning highlighting key points"
+            )
+            formatting_instructions.append(
+                "- End with a conclusion that reinforces main ideas"
+            )
+        
+        if formatting_instructions:
+            base_prompt += "\n**Formatting Requirements:**\n" + "\n".join(formatting_instructions)
+        
+        if num_images > 1:
+            base_prompt += f"""
+
+**Multi-Page Notes**: You have {num_images} pages. Please:
+- Read them in order and combine the content into a single coherent document
+- Maintain the logical flow between pages
+- Note any connections or continuations between pages"""
+        
+        base_prompt += """
+
+Please provide the enhanced, spell-checked, and beautifully formatted version of the notes."""
+        
+        return base_prompt
     
     async def process_text_with_chatgpt(self, text: str, settings: ProcessingSettings) -> str:
         """
