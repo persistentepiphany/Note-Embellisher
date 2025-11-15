@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ContentMetrics } from './ContentMetrics';
 
 interface NoteUploadStepProps {
   notes: string;
@@ -201,6 +202,7 @@ export const NoteUploadStep: React.FC<NoteUploadStepProps> = ({
               onChange={(e) => onNotesChange(e.target.value)}
               className="w-full min-h-[200px] p-3 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 resize-none bg-white/70 backdrop-blur-sm"
             />
+            {notes.trim() && <ContentMetrics text={notes} />}
           </div>
         ) : (
           <div className="space-y-4">

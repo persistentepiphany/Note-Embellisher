@@ -1,0 +1,214 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage[margin=1in]{geometry}
+\usepackage{mathptmx}
+
+\title{Note 28}
+\author{maximkazakov2005@gmail.com}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\section{A Comprehensive Survey of Software Refactoring}
+
+\textbf{Authors:} Tom Mens, Member, IEEE, and Tom Tourwe´ \\
+\textbf{Date:} February 2004
+
+\section*{Abstract}
+
+This paper provides an extensive overview of existing research in the field of software refactoring. The research is compared and discussed based on several criteria: the refactoring activities supported, the specific techniques and formalisms used for these activities, the types of software artifacts being refactored, critical issues to consider when building refactoring tool support, and the effects of refactoring on the software development process. A running example is utilized throughout to elucidate and illustrate the main concepts.
+
+\subsection*{Keywords}
+
+\begin{itemize}
+    \item Coding tools and techniques
+    \item Programming environments/construction tools
+    \item Restructuring
+    \item Reverse engineering
+    \item Reengineering
+\end{itemize}
+
+\section{Introduction}
+
+In today's dynamic programming landscape, software must constantly evolve to meet new requirements and adapt to changing conditions. This evolution, however, often leads to increased complexity and a deviation from the software’s original design, ultimately degrading its quality. Studies indicate that a significant portion of software development costs is allocated to maintenance, emphasizing the need for effective strategies to manage this complexity (Coleman et al., 1994; Guimaraes, 1983; Lientz \& Swanson, 1980).
+
+The challenge lies in the realization that enhanced methods and tools for software development tend to accommodate new features within the same time constraints, thus perpetuating the complexity spiral (Glass, 1998). To combat this, there is a pressing demand for techniques that incrementally improve the internal quality of software without altering its external behavior. This domain, referred to as restructuring or more specifically refactoring in the context of object-oriented software, seeks to achieve this goal (Chikofsky \& Cross, 1990; Opdyke, 1992).
+
+Refactoring is defined as the transformation of an object-oriented software system to improve its internal structure while preserving its external behavior (Fowler, 1999). The fundamental objective is to reorganize classes, variables, and methods within the class hierarchy to facilitate future adaptations and enhancements. Extending beyond just restructuring, refactoring also plays a crucial role in reengineering—analyzing and altering a software system to reconstitute it in a new form (Demeyer et al., 2002).
+
+\subsection{Structure of the Paper}
+
+This paper is structured as follows:
+\begin{enumerate}
+    \item \textbf{Running Example}: Introduction of a running example to illustrate concepts.
+    \item \textbf{Refactoring Activities}: Identification and explanation of various refactoring activities.
+    \item \textbf{Techniques and Formalisms}: Overview of techniques supporting refactoring activities.
+    \item \textbf{Software Artifacts}: Different types of software artifacts that can be refactored.
+    \item \textbf{Issues in Tool Development}: Essential considerations when creating refactoring tools.
+    \item \textbf{Refactoring and the Software Development Process}: How refactoring integrates into the software development framework.
+    \item \textbf{Conclusion}: A summary of key findings and future directions.
+\end{enumerate}
+
+\section{Running Example}
+
+To ground our discussion, we present a running example that illustrates a typical nontrivial refactoring of an object-oriented design.
+
+\subsection{Initial Design}
+
+The initial class hierarchy, depicted in \textbf{Figure 1}, illustrates a \texttt{Document} class that is divided into three subclasses: \texttt{ASCIIDoc}, \texttt{PSDoc}, and \texttt{PDFDoc}. Each document provides preview and print functionalities, realized through methods in corresponding \texttt{Previewer} and \texttt{Printer} classes. However, each subclass implements preprocessing or conversion differently, leading to complexity and redundancy.
+
+\subsection{Need for Refactoring}
+
+This design is not optimal. For instance, adding new functionality, such as a text search or spell checker, necessitates updating all subclasses, which increases complexity and diminishes clarity. The design lacks explicit relationships between helper classes, complicating maintenance and development.
+
+\subsection{Refactored Design}
+
+To address these issues, we introduce the \textbf{Visitor Design Pattern}, as shown in \textbf{Figure 2}. This design consolidates helper classes and provides a common interface for them via a \texttt{Visitor} class hierarchy, improving understandability and modularity.
+
+\subsubsection{Implementation Steps}
+
+\begin{enumerate}
+    \item \textbf{Move Methods}: Move the \texttt{print} and \texttt{preview} methods from each subclass to the \texttt{Printer} and \texttt{Previewer} classes, respectively, using the \textbf{MoveMethod} refactoring.
+    \item \textbf{Rename Methods}: Rename these methods to appropriate visit methods to avoid name conflicts.
+    \item \textbf{Introduce Visitor Class}: Create an abstract \texttt{Visitor} class that establishes a superclass for \texttt{Printer} and \texttt{Previewer}, ensuring a cohesive design.
+    \item \textbf{Add Accept Method}: Implement an \texttt{accept} method in all document subclasses to facilitate interaction with the \texttt{Visitor} classes.
+    \item \textbf{Refactor Calls}: Modify the original print and preview methods to call the new \texttt{accept} method, thus centralizing functionality.
+\end{enumerate}
+
+The above example illustrates the need for over twenty primitive refactorings, which serve as the foundational steps for creating composite refactorings that encapsulate more complex behavior.
+
+\section{Refactoring Activities}
+
+The refactoring process encompasses several distinct activities:
+
+\begin{enumerate}
+    \item \textbf{Identifying Refactoring Candidates}: Determine where in the code refactoring is necessary.
+    \item \textbf{Selecting Refactorings}: Choose the appropriate refactoring techniques for identified areas.
+    \item \textbf{Behavior Preservation}: Ensure that the applied refactorings do not alter the software's external behavior.
+    \item \textbf{Implementation}: Apply the identified refactorings.
+    \item \textbf{Assessing Impact}: Evaluate the effects of refactoring on software quality (e.g., complexity, maintainability).
+    \item \textbf{Consistency Maintenance}: Achieve consistency between the refactored code and other software artifacts such as documentation and tests.
+\end{enumerate}
+
+\subsection{Identifying Refactoring Opportunities}
+
+Identifying where to apply refactorings can be done through various techniques, including:
+
+\begin{itemize}
+    \item \textbf{Bad Smells}: Code structures that indicate a need for refactoring, as highlighted by Martin Fowler (1999).
+    \item \textbf{Clone Analysis}: Tools that detect duplicated code, suggesting areas where refactorings may be beneficial (Balazinska et al., 2000).
+\end{itemize}
+
+\subsection{Ensuring Behavior Preservation}
+
+Behavior preservation is critical when refactoring. It can be ensured through:
+
+\begin{itemize}
+    \item \textbf{Testing}: Comprehensive test suites that validate against expected behavior.
+    \item \textbf{Static Analysis}: Tools that check for compliance with preconditions and invariants before and after refactoring.
+\end{itemize}
+
+\subsection{Assessing Quality Impact}
+
+Refactorings can be classified based on their effects on quality attributes like robustness, extensibility, maintainability, and performance. For instance, refactoring can enhance maintainability by reducing code duplication.
+
+\subsection{Consistency Maintenance}
+
+Maintaining consistency across software artifacts is vital. Changes in one artifact must reflect in others to avoid discrepancies. Approaches include using logic rules for automated consistency checks (Rajlich, 1997).
+
+\section{Techniques and Formalisms}
+
+Various techniques and formalisms facilitate the refactoring process:
+
+\subsection{Invariants and Preconditions}
+
+Refactorings often include invariants that must remain satisfied. Preconditions are established to ensure that behavior is preserved during the transformation process.
+
+\subsection{Graph Transformation}
+
+Refactorings can be conceptualized as graph transformations, where software artifacts are represented as graphs. This formalism aids in verifying properties such as behavior preservation and consistency (Mens et al., 2002).
+
+\subsection{Additional Techniques}
+
+\begin{itemize}
+    \item \textbf{Program Slicing}: Extracts relevant code segments that may influence specific behavior, aiding in behavior preservation during refactoring (Weiser, 1984).
+    \item \textbf{Software Metrics}: Numerical measures that help evaluate software quality before and after refactoring (Demeyer et al., 2000).
+\end{itemize}
+
+\section{Types of Software Artifacts}
+
+Refactoring is not limited to source code; it can also be applied to various software artifacts, including:
+
+\subsection{Programs}
+
+Refactoring techniques differ across programming languages. Object-oriented languages often provide more straightforward restructuring opportunities due to their encapsulated nature.
+
+\subsection{Designs}
+
+Refactoring at the design level, such as UML models, allows for higher abstraction and facilitates better structural understanding (Boger et al., 2002).
+
+\subsection{Software Requirements}
+
+Refactoring can also apply to requirements specifications, breaking them down into structured viewpoints, enhancing clarity and manageability (Russo et al., 1998).
+
+\section{Tool Support}
+
+Effective refactoring requires robust tool support. Various characteristics impact tool usability:
+
+\subsection{Automation}
+
+Automation levels vary among tools, with some offering full automation while others provide semi-automated support.
+
+\subsection{Reliability}
+
+Reliability hinges on the tool's ability to guarantee behavior-preserving transformations. A robust undo mechanism is essential for reverting undesired changes.
+
+\subsection{Configurability}
+
+A configurable tool allows users to adapt refactorings to their specific needs. Open extensibility mechanisms enable the addition of new refactorings and specifications.
+
+\subsection{Coverage and Scalability}
+
+Ideally, a refactoring tool should cover a wide range of activities. Composite refactorings can enhance scalability by encapsulating multiple primitive refactorings into a single operation.
+
+\subsection{Language Independence}
+
+A language-independent framework for refactoring can streamline the application of techniques across different programming languages (La¨mmel, 2002).
+
+\section{Process Support}
+
+Refactoring integrates seamlessly into various software development processes, including:
+
+\subsection{Software Reengineering}
+
+Refactoring plays a key role in the reengineering of legacy software, providing a systematic approach to restructuring while addressing significant challenges.
+
+\subsection{Agile Software Development}
+
+In an agile context, refactoring becomes a continuous practice, enabling developers to improve software incrementally while maintaining flexibility.
+
+\subsection{Framework-Based Development}
+
+In frameworks and product lines, refactoring may result in evolution conflicts, necessitating careful coordination and resolution of changes across multiple systems.
+
+\section{Conclusion}
+
+This paper offers a comprehensive survey of research in software refactoring, categorized by multiple criteria. It highlights the need for continued exploration of formalisms, processes, methods, and tools that can enhance the consistency, scalability, and flexibility of refactoring practices. While commercial tools have proliferated, ongoing research is essential to address the remaining challenges and shortcomings in the field.
+
+\section*{Acknowledgments}
+
+This research was funded by the FWO Project G.0452.03 “A formal foundation for software refactoring.” We express our gratitude to Jean-Marc Je´ze´quel and the anonymous reviewers for their insightful feedback that greatly improved the quality of this paper.
+
+\section*{References}
+
+(References as per the original text)
+
+\end{document}

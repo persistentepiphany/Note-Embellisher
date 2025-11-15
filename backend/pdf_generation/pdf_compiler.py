@@ -128,44 +128,58 @@ class PDFCompiler:
         output_filename: str,
         save_tex: bool
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        """Compile LaTeX using cloud service (LaTeX.Online)"""
-        
+        """Compile LaTeX using texlive.net multipart API"""
+
         try:
-            # Use LaTeX.Online free API
+            prepared = self._prepare_latex_for_cloud(latex_content)
+            files = {
+                'filecontents[]': ('document.tex', prepared, 'text/plain')
+            }
+            data = {
+                'filename[]': 'document.tex',
+                'engine': 'pdflatex',
+                'return': 'pdf'
+            }
+
             response = requests.post(
-                'https://latexonline.cc/compile',
-                params={
-                    'text': latex_content,
-                    'force': 'true'  # Force recompilation
-                },
-                timeout=90
+                'https://texlive.net/cgi-bin/latexcgi',
+                files=files,
+                data=data,
+                timeout=120
             )
-            
-            if response.status_code == 200:
-                # Save PDF
+
+            content_type = response.headers.get('Content-Type', '').lower()
+            if response.status_code == 200 and content_type.startswith('application/pdf'):
                 pdf_output_path = self.output_dir / f"{output_filename}.pdf"
                 with open(pdf_output_path, 'wb') as f:
                     f.write(response.content)
-                
-                # Optionally save .tex file
+
                 tex_output_path = None
                 if save_tex:
                     tex_output_path = self.output_dir / f"{output_filename}.tex"
                     with open(tex_output_path, 'w', encoding='utf-8') as f:
                         f.write(latex_content)
-                
+
                 print(f"PDF compiled via cloud: {pdf_output_path}")
                 return str(pdf_output_path), str(tex_output_path) if save_tex else None, None
-            else:
-                error_msg = f"Cloud compilation failed with status {response.status_code}"
-                if response.text:
-                    error_msg += f": {response.text[:200]}"
-                return None, None, error_msg
-                
+
+            error_preview = response.text[:500] if response.text else ''
+            error_msg = (
+                f"Cloud compilation failed with status {response.status_code}: {error_preview}"
+            )
+            return None, None, error_msg
+
         except requests.Timeout:
-            return None, None, "Cloud compilation timed out (exceeded 90 seconds)"
+            return None, None, "Cloud compilation timed out (exceeded 120 seconds)"
         except Exception as e:
             return None, None, f"Cloud compilation error: {str(e)}"
+
+    @staticmethod
+    def _prepare_latex_for_cloud(latex_content: str) -> bytes:
+        """texlive.net expects CRLF line endings in uploaded files."""
+        normalized = latex_content.replace('\r\n', '\n').replace('\r', '\n')
+        crlf_content = normalized.replace('\n', '\r\n')
+        return crlf_content.encode('utf-8')
     
     def get_pdf_url(self, pdf_path: str) -> str:
         """

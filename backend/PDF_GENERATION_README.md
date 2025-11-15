@@ -23,7 +23,7 @@ The Note Embellisher now includes professional PDF generation using LaTeX! This 
 ### 3. **PDF Compilation** (New!)
    - Two compilation methods available:
      - **Local**: Uses `pdflatex` if installed (faster, better control)
-     - **Cloud**: Uses LaTeX.Online API (no local installation needed)
+     - **Cloud**: Uses the texlive.net `latexcgi` API (no local installation needed)
    - Automatically saves both `.tex` and `.pdf` files
    - Returns download URL to frontend
 
@@ -71,8 +71,10 @@ No additional installation needed! Uses LaTeX.Online API.
 
 **Cons**:
 - Requires internet connection
-- Slightly slower (90s timeout)
+- Slightly slower (120s timeout)
 - Relies on external service
+
+> **Note:** texlive.net expects uploaded `.tex` files to use CRLF (Windows) line endings. The backend normalizes your LaTeX before uploading, but if you call the API manually be sure to convert `\n` to `\r\n`.
 
 ### Option 2: Local Compilation (Better for development)
 

@@ -2,11 +2,12 @@ from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Union
 import json
 from fastapi.security import OAuth2PasswordBearer
 import sys
 import os
+from pydantic import BaseModel
 
 print("=" * 50)
 print("STARTING NOTE EMBELLISHER API")
@@ -98,6 +99,63 @@ except ImportError:
 
 # ----- firebase-fix: Add authentication dependency -----
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
+
+def ensure_processing_settings(settings_payload: Union[ProcessingSettings, ProcessingSettingsSchema, dict, str, None]) -> ProcessingSettings:
+    """Normalize any incoming settings payload into a ProcessingSettings instance."""
+    if isinstance(settings_payload, ProcessingSettings):
+        return settings_payload
+    if isinstance(settings_payload, ProcessingSettingsSchema):
+        data = settings_payload.model_dump()
+    elif isinstance(settings_payload, str):
+        try:
+            data = json.loads(settings_payload)
+        except json.JSONDecodeError:
+            data = {}
+    elif isinstance(settings_payload, dict):
+        data = settings_payload
+    elif settings_payload is None:
+        data = {}
+    else:
+        data = getattr(settings_payload, "__dict__", {})
+    return ProcessingSettings(**data)
+
+def settings_to_schema(settings_payload: Union[ProcessingSettings, ProcessingSettingsSchema, dict, str]) -> ProcessingSettingsSchema:
+    if isinstance(settings_payload, ProcessingSettingsSchema):
+        return settings_payload
+    if isinstance(settings_payload, ProcessingSettings):
+        return ProcessingSettingsSchema(**settings_payload.__dict__)
+    if isinstance(settings_payload, str):
+        return ProcessingSettingsSchema(**json.loads(settings_payload))
+    if isinstance(settings_payload, dict):
+        return ProcessingSettingsSchema(**settings_payload)
+    raise ValueError("Unsupported settings payload")
+
+def note_to_response(note: "Note", progress_override: Optional[int] = None, progress_message: Optional[str] = None) -> NoteResponse:
+    settings_schema = settings_to_schema(note.settings_json)
+    if progress_override is not None:
+        progress = progress_override
+    else:
+        progress = 100 if note.status == ProcessingStatus.COMPLETED else 0
+    return NoteResponse(
+        id=note.id,
+        text=note.text,
+        settings=settings_schema,
+        processed_content=note.processed_content,
+        status=note.status,
+        progress=progress,
+        progress_message=progress_message,
+        image_url=note.image_url,
+        image_filename=note.image_filename,
+        image_type=note.image_type,
+        input_type=note.input_type,
+        created_at=note.created_at,
+        updated_at=note.updated_at
+    )
+
+
+class TopicsFromTextRequest(BaseModel):
+    text: str
+    max_topics: Optional[int] = 6
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     """
@@ -223,6 +281,37 @@ async def debug_all_notes(db: Session = Depends(get_db)):
         ]
     }
 
+class TopicPreviewRequest(BaseModel):
+    text: str
+
+class TopicPreviewResponse(BaseModel):
+    topics: List[str]
+
+@app.post("/preview-topics", response_model=TopicPreviewResponse)
+async def preview_topics(
+    request: TopicPreviewRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Extract key topics from text content using AI
+    """
+    if not CHATGPT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="ChatGPT service not available")
+    
+    if not request.text or len(request.text.strip()) < 50:
+        raise HTTPException(status_code=400, detail="Text must be at least 50 characters")
+    
+    try:
+        print(f"Extracting topics from text ({len(request.text)} chars)")
+        topics = await chatgpt_service.extract_topics_from_text(request.text, max_topics=6)
+        print(f"Extracted {len(topics)} topics: {topics}")
+        return TopicPreviewResponse(topics=topics)
+    except Exception as e:
+        print(f"Error extracting topics: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to extract topics: {str(e)}")
+
 @app.post("/notes/", response_model=NoteResponse)
 async def create_note(
     note: NoteCreate, 
@@ -234,15 +323,11 @@ async def create_note(
     Create a new note and start processing it in the background
     """
     # Create note in database
+    settings_dict = note.settings.model_dump()
     db_note = Note(
         user_id=user["uid"],  # firebase-fix: Link note to user
         text=note.text,
-        settings_json=json.dumps({
-            "add_bullet_points": note.settings.add_bullet_points,
-            "add_headers": note.settings.add_headers,
-            "expand": note.settings.expand,
-            "summarize": note.settings.summarize
-        }),
+        settings_json=json.dumps(settings_dict),
         status=ProcessingStatus.PROCESSING
     )
     db.add(db_note)
@@ -253,19 +338,7 @@ async def create_note(
     background_tasks.add_task(process_note_background, db_note.id, note.settings)
     
     # Return the created note
-    return NoteResponse(
-        id=db_note.id,
-        text=db_note.text,
-        settings=note.settings,
-        processed_content=db_note.processed_content,
-        status=db_note.status,
-        image_url=db_note.image_url,
-        image_filename=db_note.image_filename,
-        image_type=db_note.image_type,
-        input_type=db_note.input_type,
-        created_at=db_note.created_at,
-        updated_at=db_note.updated_at
-    )
+    return note_to_response(db_note, progress_override=0, progress_message="Queued for processing")
 
 @app.get("/notes/{note_id}", response_model=NoteResponse)
 async def get_note(
@@ -281,19 +354,7 @@ async def get_note(
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
-    return NoteResponse(
-        id=db_note.id,
-        text=db_note.text,
-        settings=json.loads(db_note.settings_json),
-        processed_content=db_note.processed_content,
-        status=db_note.status,
-        image_url=db_note.image_url,
-        image_filename=db_note.image_filename,
-        image_type=db_note.image_type,
-        input_type=db_note.input_type,
-        created_at=db_note.created_at,
-        updated_at=db_note.updated_at
-    )
+    return note_to_response(db_note)
 
 @app.get("/notes/", response_model=List[NoteResponse])
 async def get_notes(
@@ -311,22 +372,7 @@ async def get_notes(
     notes = db.query(Note).filter(Note.user_id == user_id).offset(skip).limit(limit).all()
     print(f"Found {len(notes)} notes for user {user_id}")
     
-    return [
-        NoteResponse(
-            id=note.id,
-            text=note.text,
-            settings=json.loads(note.settings_json),
-            processed_content=note.processed_content,
-            status=note.status,
-            image_url=note.image_url,
-            image_filename=note.image_filename,
-            image_type=note.image_type,
-            input_type=note.input_type,
-            created_at=note.created_at,
-            updated_at=note.updated_at
-        )
-        for note in notes
-    ]
+    return [note_to_response(note) for note in notes]
 
 @app.delete("/notes/{note_id}")
 async def delete_note(
@@ -398,12 +444,7 @@ async def upload_image_note(
         db_note = Note(
             user_id=user["uid"],
             text=None,  # Will be populated after OCR
-            settings_json=json.dumps({
-                "add_bullet_points": processing_settings.add_bullet_points,
-                "add_headers": processing_settings.add_headers,
-                "expand": processing_settings.expand,
-                "summarize": processing_settings.summarize
-            }),
+            settings_json=json.dumps(processing_settings.__dict__),
             status=ProcessingStatus.PROCESSING,
             input_type="image",
             image_url=shareable_url,
@@ -433,24 +474,7 @@ async def upload_image_note(
             )
         
         # Return the created note
-        return NoteResponse(
-            id=db_note.id,
-            text=db_note.text,
-            settings=ProcessingSettingsSchema(
-                add_bullet_points=processing_settings.add_bullet_points,
-                add_headers=processing_settings.add_headers,
-                expand=processing_settings.expand,
-                summarize=processing_settings.summarize
-            ),
-            processed_content=db_note.processed_content,
-            status=db_note.status,
-            image_url=db_note.image_url,
-            image_filename=db_note.image_filename,
-            image_type=db_note.image_type,
-            input_type=db_note.input_type,
-            created_at=db_note.created_at,
-            updated_at=db_note.updated_at
-        )
+        return note_to_response(db_note, progress_override=0, progress_message="Uploading media...")
         
     except HTTPException:
         raise
@@ -525,12 +549,7 @@ async def upload_multiple_images(
         db_note = Note(
             user_id=user["uid"],
             text=None,  # Will be populated after GPT-4 Vision processing
-            settings_json=json.dumps({
-                "add_bullet_points": processing_settings.add_bullet_points,
-                "add_headers": processing_settings.add_headers,
-                "expand": processing_settings.expand,
-                "summarize": processing_settings.summarize
-            }),
+            settings_json=json.dumps(processing_settings.__dict__),
             status=ProcessingStatus.PROCESSING,
             input_type="images",  # Note the plural
             image_url=image_urls[0],  # Store first image URL
@@ -551,24 +570,7 @@ async def upload_multiple_images(
         )
         
         # Return the created note
-        return NoteResponse(
-            id=db_note.id,
-            text=db_note.text,
-            settings=ProcessingSettingsSchema(
-                add_bullet_points=processing_settings.add_bullet_points,
-                add_headers=processing_settings.add_headers,
-                expand=processing_settings.expand,
-                summarize=processing_settings.summarize
-            ),
-            processed_content=db_note.processed_content,
-            status=db_note.status,
-            image_url=db_note.image_url,
-            image_filename=db_note.image_filename,
-            image_type=db_note.image_type,
-            input_type=db_note.input_type,
-            created_at=db_note.created_at,
-            updated_at=db_note.updated_at
-        )
+        return note_to_response(db_note, progress_override=0, progress_message="Uploading images...")
         
     except HTTPException:
         raise
@@ -577,6 +579,86 @@ async def upload_multiple_images(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to upload images: {str(e)}")
+
+
+@app.post("/preview/topics-from-text")
+async def preview_topics_from_text(
+    request: TopicsFromTextRequest,
+    user: dict = Depends(get_current_user)
+):
+    if not CHATGPT_AVAILABLE or chatgpt_service is None:
+        raise HTTPException(status_code=503, detail="ChatGPT service is not available")
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Text content is required")
+    max_topics = max(1, min(request.max_topics or 6, 10))
+    try:
+        suggestions = await chatgpt_service.extract_topics_from_text(request.text, max_topics)
+        return {"suggestions": suggestions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract topics: {str(e)}")
+
+
+@app.post("/preview/topics-from-images")
+async def preview_topics_from_images(
+    files: List[UploadFile] = File(...),
+    max_topics: int = Form(6),
+    user: dict = Depends(get_current_user)
+):
+    if not CHATGPT_AVAILABLE or chatgpt_service is None:
+        raise HTTPException(status_code=503, detail="ChatGPT service is not available")
+    if len(files) < 1 or len(files) > 5:
+        raise HTTPException(status_code=400, detail="Please upload between 1 and 5 files")
+    max_topics = max(1, min(max_topics, 10))
+
+    image_buffers: List[bytes] = []
+    image_names: List[str] = []
+    aggregated_text_parts: List[str] = []
+
+    for file in files:
+        if not dropbox_service.validate_file_type(file.filename, file.content_type):
+            raise HTTPException(status_code=400, detail=f"Invalid file type for {file.filename}")
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"{file.filename} exceeds 10MB limit")
+
+        extension = os.path.splitext(file.filename)[1].lower()
+        if extension == ".pdf" or file.content_type == "application/pdf":
+            try:
+                import fitz
+                doc = fitz.open(stream=content, filetype="pdf")
+                pdf_text = []
+                for page in doc:
+                    pdf_text.append(page.get_text())
+                doc.close()
+                aggregated_text_parts.append("\n".join(pdf_text))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to read PDF {file.filename}: {str(e)}")
+        else:
+            image_buffers.append(content)
+            image_names.append(file.filename)
+
+    suggestions: List[str] = []
+
+    if aggregated_text_parts:
+        text_blob = "\n".join(aggregated_text_parts)
+        suggestions.extend(await chatgpt_service.extract_topics_from_text(text_blob, max_topics))
+
+    if image_buffers:
+        suggestions.extend(
+            await chatgpt_service.extract_topics_from_images(image_buffers, image_names, max_topics)
+        )
+
+    # Deduplicate while preserving order
+    unique_topics = []
+    seen = set()
+    for topic in suggestions:
+        normalized = topic.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_topics.append(topic.strip())
+
+    return {"suggestions": unique_topics[:max_topics]}
 
 @app.post("/notes/{note_id}/generate-pdf")
 async def generate_pdf(
@@ -615,6 +697,7 @@ async def generate_pdf(
         )
     
     try:
+        settings_schema = settings_to_schema(db_note.settings_json)
         # Simple metadata
         title = f"Note {note_id}"
         author = current_user.get("email", "Student")
@@ -629,7 +712,9 @@ async def generate_pdf(
         latex_content = latex_service.generate_latex_document(
             content=content,
             title=title,
-            author=author
+            author=author,
+            style=settings_schema.latex_style,
+            font=settings_schema.font_preference
         )
         
         print(f"LaTeX generation complete. Length: {len(latex_content)} characters")
@@ -702,12 +787,7 @@ async def process_note_background(note_id: int, settings):
             return
         
         # Convert settings to ProcessingSettings object
-        processing_settings = ProcessingSettings(
-            add_bullet_points=settings.add_bullet_points,
-            add_headers=settings.add_headers,
-            expand=settings.expand,
-            summarize=settings.summarize
-        )
+        processing_settings = ensure_processing_settings(settings)
         
         # Process with ChatGPT
         processed_content = await chatgpt_service.process_text_with_chatgpt(
@@ -766,12 +846,7 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         print(f"OCR completed for note {note_id}, extracted text length: {len(extracted_text)}")
         
         # Convert settings to ProcessingSettings object
-        processing_settings = ProcessingSettings(
-            add_bullet_points=settings.add_bullet_points,
-            add_headers=settings.add_headers,
-            expand=settings.expand,
-            summarize=settings.summarize
-        )
+        processing_settings = ensure_processing_settings(settings)
         
 
         
@@ -831,12 +906,7 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
             raise Exception("ChatGPT service is not available in this deployment")
         
         # Convert settings to ProcessingSettings object
-        processing_settings = ProcessingSettings(
-            add_bullet_points=settings.add_bullet_points,
-            add_headers=settings.add_headers,
-            expand=settings.expand,
-            summarize=settings.summarize
-        )
+        processing_settings = ensure_processing_settings(settings)
         
         # Get the actual Dropbox paths from the note
         # For single images, image_path is a string. For multiple, it's JSON array

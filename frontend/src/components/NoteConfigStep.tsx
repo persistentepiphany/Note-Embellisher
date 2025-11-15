@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProcessingConfig } from '../types/config';
+import { previewTopics } from '../services/apiService';
 
 interface NoteConfigStepProps {
   config: ProcessingConfig;
@@ -7,6 +8,7 @@ interface NoteConfigStepProps {
   onBack: () => void;
   onNext: () => void;
   isProcessing?: boolean;
+  noteText?: string; // Text content for topic preview
 }
 
 export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({ 
@@ -14,112 +16,397 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
   onConfigChange, 
   onBack, 
   onNext,
-  isProcessing = false 
+  isProcessing = false,
+  noteText = ''
 }) => {
-  const handleConfigChange = (key: keyof ProcessingConfig, value: boolean) => {
+  const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
+  const [loadingTopics, setLoadingTopics] = useState(false);
+  const [topicError, setTopicError] = useState<string | null>(null);
+  const [customTopic, setCustomTopic] = useState('');
+  const [showCustomInput, setShowCustomInput] = useState(false);
+
+  const handleConfigChange = (key: keyof ProcessingConfig, value: boolean | string | string[]) => {
     onConfigChange({
       ...config,
       [key]: value,
     });
   };
 
-  const hasProcessingOption = Object.values(config).some(Boolean);
+  const hasProcessingOption = config.add_bullet_points || config.add_headers || config.expand || config.summarize;
+
+  // Fetch topic suggestions when component mounts if text is available
+  useEffect(() => {
+    if (noteText && noteText.length > 50) {
+      fetchTopicSuggestions();
+    }
+  }, []);
+
+  const fetchTopicSuggestions = async () => {
+    if (!noteText || noteText.length < 50) {
+      setTopicError('Please enter at least 50 characters to get topic suggestions');
+      return;
+    }
+
+    try {
+      setLoadingTopics(true);
+      setTopicError(null);
+      setSuggestedTopics([]); // Clear previous suggestions
+      console.log('Fetching topic suggestions for text length:', noteText.length);
+      const response = await previewTopics(noteText);
+      console.log('Received topic suggestions:', response);
+      setSuggestedTopics(response.topics || []);
+      if (!response.topics || response.topics.length === 0) {
+        setTopicError('No topics found. Try adding custom topics manually.');
+      }
+    } catch (error) {
+      console.error('Error fetching topic suggestions:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setTopicError(`Failed to load topic suggestions: ${errorMessage}. You can still add topics manually.`);
+    } finally {
+      setLoadingTopics(false);
+    }
+  };
+
+  const toggleTopic = (topic: string) => {
+    const currentTopics = config.focus_topics || [];
+    const isSelected = currentTopics.includes(topic);
+    
+    if (isSelected) {
+      handleConfigChange('focus_topics', currentTopics.filter(t => t !== topic));
+    } else {
+      handleConfigChange('focus_topics', [...currentTopics, topic]);
+    }
+  };
+
+  const addCustomTopic = () => {
+    const trimmed = customTopic.trim();
+    if (!trimmed) return;
+    
+    const currentTopics = config.focus_topics || [];
+    if (!currentTopics.includes(trimmed)) {
+      handleConfigChange('focus_topics', [...currentTopics, trimmed]);
+    }
+    setCustomTopic('');
+    setShowCustomInput(false);
+  };
+
+  const removeTopic = (topic: string) => {
+    const currentTopics = config.focus_topics || [];
+    handleConfigChange('focus_topics', currentTopics.filter(t => t !== topic));
+  };
 
   return (
     <div className="w-full mx-auto bg-white/80 backdrop-blur-sm border-orange-200/50 border rounded-xl shadow-lg p-6">
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-2">
           <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.828 2.828A4 4 0 019.172 21H7l-4-4h2.828a4 4 0 001.414-.586l.828-.828A4 4 0 016.586 10H4l4-4z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.828 2.828A4 4 0 019.172 21H7l-4-4h2.828a4 4 0 001.414-.586l.828-.828A4 4 0 006.586 10H4l4-4z" />
           </svg>
           <h2 className="text-2xl font-bold text-gray-900">Configure Your Notes</h2>
         </div>
         <p className="text-gray-600">
-          Choose how you want your notes enhanced
+          Customize how your notes are enhanced with AI
         </p>
       </div>
       
-      <div className="space-y-4 mb-6">
-        <p className="text-sm font-medium text-gray-700">Processing Options (choose at least one)</p>
-        
-        {[
-          { 
-            key: 'add_bullet_points', 
-            label: 'Add Bullet Points', 
-            description: 'Format content with bullet points for better readability and organization',
-            icon: (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v6a2 2 0 002 2h2m9-9h2a2 2 0 012 2v6a2 2 0 01-2 2h-2m-9-9V7a2 2 0 012-2h2m-2 9v2a2 2 0 002 2h2" />
-              </svg>
-            )
-          },
-          { 
-            key: 'add_headers', 
-            label: 'Add Headers', 
-            description: 'Add clear headers and subheaders to organize content into logical sections',
-            icon: (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-              </svg>
-            )
-          },
-          { 
-            key: 'expand', 
-            label: 'Expand Content', 
-            description: 'Elaborate with more details, explanations, and context',
-            icon: (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-              </svg>
-            )
-          },
-          { 
-            key: 'summarize', 
-            label: 'Summarize', 
-            description: 'Provide a concise summary of main points while maintaining key information',
-            icon: (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            )
-          }
-        ].map((option) => (
-          <div 
-            key={option.key} 
-            className="flex items-start space-x-3 p-4 border border-orange-200/50 rounded-lg bg-orange-50/30 hover:bg-orange-50/50 transition-all duration-200"
-          >
-            <input
-              id={option.key}
-              type="checkbox"
-              checked={config[option.key as keyof ProcessingConfig]}
-              onChange={(e) => handleConfigChange(option.key as keyof ProcessingConfig, e.target.checked)}
-              disabled={isProcessing}
-              className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-orange-300 rounded disabled:opacity-50 mt-1"
-            />
-            <div className="flex-1">
-              <div className="flex items-center space-x-2 mb-1">
-                <div className="text-orange-600">
-                  {option.icon}
-                </div>
-                <label htmlFor={option.key} className="text-sm font-medium text-gray-900 cursor-pointer">
-                  {option.label}
-                </label>
-              </div>
-              <p className="text-xs text-gray-600">
-                {option.description}
+      <div className="space-y-8">
+        {/* Content Focus Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                Content Focus (Optional)
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                {noteText && noteText.length >= 50 
+                  ? 'Specify key topics to emphasize in your notes' 
+                  : 'AI topic suggestions available after text is extracted from images'}
               </p>
             </div>
+            {noteText && noteText.length >= 50 && !suggestedTopics.length && !loadingTopics && !topicError && (
+              <button
+                onClick={fetchTopicSuggestions}
+                disabled={loadingTopics}
+                className="text-sm px-4 py-2 bg-indigo-600 text-white border border-indigo-700 rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-sm"
+              >
+                Get AI Suggestions
+              </button>
+            )}
           </div>
-        ))}
-        
-        {!hasProcessingOption && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
-            Please select at least one processing option
-          </p>
-        )}
+
+          {/* Topic Suggestions */}
+          {loadingTopics && (
+            <div className="p-4 bg-indigo-50/50 border border-indigo-200 rounded-lg">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-indigo-700">
+                  <div className="w-4 h-4 border-2 border-indigo-400 border-t-indigo-700 rounded-full animate-spin"></div>
+                  <span className="text-sm font-medium">Analyzing content with AI...</span>
+                </div>
+                <div className="text-xs text-indigo-600 space-y-1">
+                  <p>✓ Reading your notes</p>
+                  <p>✓ Identifying key concepts</p>
+                  <p className="animate-pulse">⏳ Extracting main topics...</p>
+                </div>
+                <p className="text-xs text-indigo-500 italic">This may take 5-10 seconds</p>
+              </div>
+            </div>
+          )}
+
+          {topicError && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">{topicError}</p>
+            </div>
+          )}
+
+          {suggestedTopics.length > 0 && (
+            <div className="p-4 bg-indigo-50/50 border border-indigo-200 rounded-lg space-y-3">
+              <p className="text-sm font-medium text-indigo-900">AI-Suggested Topics:</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestedTopics.map((topic, index) => {
+                  const isSelected = (config.focus_topics || []).includes(topic);
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => toggleTopic(topic)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-white text-indigo-700 border border-indigo-300 hover:bg-indigo-50'
+                      }`}
+                    >
+                      {isSelected && (
+                        <svg className="w-3 h-3 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {topic}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Selected Topics Display */}
+          {(config.focus_topics && config.focus_topics.length > 0) && (
+            <div className="p-4 bg-green-50/50 border border-green-200 rounded-lg space-y-2">
+              <p className="text-sm font-medium text-green-900">Selected Topics ({config.focus_topics.length}):</p>
+              <div className="flex flex-wrap gap-2">
+                {config.focus_topics.map((topic, index) => (
+                  <span
+                    key={index}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-800 rounded-lg text-sm font-medium"
+                  >
+                    {topic}
+                    <button
+                      onClick={() => removeTopic(topic)}
+                      className="hover:bg-green-200 rounded-full p-0.5 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Custom Topic Input */}
+          {showCustomInput ? (
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customTopic}
+                  onChange={(e) => setCustomTopic(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addCustomTopic()}
+                  placeholder="Enter a custom topic..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  autoFocus
+                />
+                <button
+                  onClick={addCustomTopic}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
+                >
+                  Add
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCustomInput(false);
+                    setCustomTopic('');
+                  }}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowCustomInput(true)}
+              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add custom topic
+            </button>
+          )}
+        </div>
+
+        {/* Processing Options Section */}
+        <div className="space-y-4 border-t pt-6">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Enhancement Options
+            <span className="text-sm text-red-600 font-normal">(choose at least one)</span>
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              { 
+                key: 'add_bullet_points', 
+                label: 'Add Bullet Points', 
+                description: 'Format content with bullet points for better readability',
+                icon: (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v6a2 2 0 002 2h2m9-9h2a2 2 0 012 2v6a2 2 0 01-2 2h-2m-9-9V7a2 2 0 012-2h2m-2 9v2a2 2 0 002 2h2" />
+                  </svg>
+                )
+              },
+              { 
+                key: 'add_headers', 
+                label: 'Add Headers', 
+                description: 'Organize content with clear headers and sections',
+                icon: (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                )
+              },
+              { 
+                key: 'expand', 
+                label: 'Expand Content', 
+                description: 'Add more details, explanations, and context',
+                icon: (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                  </svg>
+                )
+              },
+              { 
+                key: 'summarize', 
+                label: 'Summarize', 
+                description: 'Create a concise summary of key points',
+                icon: (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                )
+              }
+            ].map((option) => (
+              <div 
+                key={option.key} 
+                className="flex items-start space-x-3 p-4 border border-orange-200/50 rounded-lg bg-orange-50/30 hover:bg-orange-50/50 transition-all duration-200 cursor-pointer"
+                onClick={() => handleConfigChange(option.key as keyof ProcessingConfig, !config[option.key as keyof ProcessingConfig])}
+              >
+                <input
+                  id={option.key}
+                  type="checkbox"
+                  checked={config[option.key as keyof ProcessingConfig] as boolean}
+                  onChange={(e) => handleConfigChange(option.key as keyof ProcessingConfig, e.target.checked)}
+                  disabled={isProcessing}
+                  className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-orange-300 rounded disabled:opacity-50 mt-1 cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <div className="flex-1">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <div className="text-orange-600">
+                      {option.icon}
+                    </div>
+                    <label htmlFor={option.key} className="text-sm font-medium text-gray-900 cursor-pointer">
+                      {option.label}
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    {option.description}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {!hasProcessingOption && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+              Please select at least one enhancement option
+            </p>
+          )}
+        </div>
+
+        {/* Style & Format Section */}
+        <div className="space-y-4 border-t pt-6">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+            </svg>
+            PDF Style & Format (Optional)
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* LaTeX Style Selector */}
+            <div className="space-y-2">
+              <label htmlFor="latex-style" className="block text-sm font-medium text-gray-700">
+                Document Style
+              </label>
+              <select
+                id="latex-style"
+                value={config.latex_style || 'academic'}
+                onChange={(e) => handleConfigChange('latex_style', e.target.value)}
+                className="w-full px-3 py-2 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-sm"
+              >
+                <option value="academic">Academic - Scholarly layout with refined spacing</option>
+                <option value="personal">Personal - Friendly tone for study notes</option>
+                <option value="minimalist">Minimalist - Clean and simple design</option>
+              </select>
+            </div>
+
+            {/* Font Preference Selector */}
+            <div className="space-y-2">
+              <label htmlFor="font-preference" className="block text-sm font-medium text-gray-700">
+                Font Preference
+              </label>
+              <select
+                id="font-preference"
+                value={config.font_preference || 'Times New Roman'}
+                onChange={(e) => handleConfigChange('font_preference', e.target.value)}
+                className="w-full px-3 py-2 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white text-sm"
+              >
+                <option value="Times New Roman">Times New Roman (Serif)</option>
+                <option value="Helvetica">Helvetica (Sans-serif)</option>
+                <option value="Arial">Arial (Sans-serif)</option>
+                <option value="Palatino">Palatino (Serif)</option>
+                <option value="Garamond">Garamond (Serif)</option>
+                <option value="Monospace">Monospace (Code-friendly)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="p-3 bg-purple-50/50 border border-purple-200 rounded-lg">
+            <p className="text-xs text-purple-800">
+              <strong>Note:</strong> These settings will be applied when generating PDF documents from your notes.
+            </p>
+          </div>
+        </div>
       </div>
 
-      <div className="flex justify-between pt-4">
+      {/* Action Buttons */}
+      <div className="flex justify-between pt-6 border-t mt-6">
         <button
           onClick={onBack}
           disabled={isProcessing}

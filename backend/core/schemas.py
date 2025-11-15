@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
@@ -14,6 +14,9 @@ class ProcessingSettingsSchema(BaseModel):
     add_headers: bool = False
     expand: bool = False
     summarize: bool = False
+    focus_topics: List[str] = Field(default_factory=list)
+    latex_style: str = "academic"
+    font_preference: str = "Times New Roman"
 
 class NoteCreate(BaseModel):
     text: str
@@ -25,6 +28,8 @@ class NoteResponse(BaseModel):
     settings: ProcessingSettingsSchema
     processed_content: Optional[str] = None
     status: ProcessingStatus
+    progress: Optional[int] = None
+    progress_message: Optional[str] = None
     # Image-related fields
     image_url: Optional[str] = None
     image_filename: Optional[str] = None

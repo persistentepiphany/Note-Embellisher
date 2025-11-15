@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NoteUploadStep } from './NoteUploadStep';
@@ -15,7 +15,7 @@ export const NoteSubmission: React.FC = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [notes, setNotes] = useState('');
-  const [uploadMode, setUploadMode] = useState<'text' | 'image'>('text');
+  const [uploadMode, setUploadMode] = useState<'text' | 'image'>('image'); // Default to image
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [config, setConfig] = useState<ProcessingConfig>(defaultConfig);
   const [processedNotes, setProcessedNotes] = useState('');
@@ -23,6 +23,31 @@ export const NoteSubmission: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [currentNote, setCurrentNote] = useState<NoteResponse | null>(null);
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [remainingTime, setRemainingTime] = useState<number | null>(null);
+
+  // Real-time countdown timer
+  useEffect(() => {
+    if (!isProcessing || !startTime || !estimatedTime) {
+      setRemainingTime(null);
+      return;
+    }
+
+    const updateRemainingTime = () => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const remaining = Math.max(0, estimatedTime - elapsed);
+      setRemainingTime(remaining);
+    };
+
+    // Update immediately
+    updateRemainingTime();
+
+    // Update every second
+    const interval = setInterval(updateRemainingTime, 1000);
+
+    return () => clearInterval(interval);
+  }, [isProcessing, startTime, estimatedTime]);
 
   const getStepProgress = () => {
     switch (currentStep) {
@@ -56,6 +81,15 @@ export const NoteSubmission: React.FC = () => {
     try {
       setIsProcessing(true);
       setError(null);
+      setStartTime(Date.now());
+      
+      // Estimate processing time based on content
+      if (uploadMode === 'image') {
+        setEstimatedTime(selectedFiles.length > 1 ? 45 : 30); // 30-45 seconds for images
+      } else {
+        const wordCount = notes.trim().split(/\s+/).length;
+        setEstimatedTime(Math.max(15, Math.min(60, Math.ceil(wordCount / 50)))); // 15-60 seconds based on length
+      }
       
       let noteResponse: NoteResponse;
       
@@ -119,6 +153,8 @@ export const NoteSubmission: React.FC = () => {
       console.error('Error processing note:', error);
       setError(error instanceof Error ? error.message : 'An error occurred while processing your content');
       setProcessingStatus('');
+      setEstimatedTime(null);
+      setStartTime(null);
     } finally {
       setIsProcessing(false);
     }
@@ -132,13 +168,16 @@ export const NoteSubmission: React.FC = () => {
   const handleStartOver = () => {
     setCurrentStep('upload');
     setNotes('');
-    setUploadMode('text');
+    setUploadMode('image');
     setSelectedFiles([]);
     setConfig(defaultConfig);
     setProcessedNotes('');
     setError(null);
     setCurrentNote(null);
     setProcessingStatus('');
+    setEstimatedTime(null);
+    setStartTime(null);
+    setRemainingTime(null);
   };
 
   const handleBackToDashboard = () => {
@@ -208,11 +247,18 @@ export const NoteSubmission: React.FC = () => {
                   </div>
                   <span className="text-amber-800 font-medium">{processingStatus}</span>
                 </div>
-                {currentNote && (
-                  <span className="text-sm text-amber-700 font-semibold">
-                    {currentNote.progress || 0}%
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {currentNote && (
+                    <span className="text-sm text-amber-700 font-semibold">
+                      {currentNote.progress || 0}%
+                    </span>
+                  )}
+                  {remainingTime !== null && (
+                    <span className="text-xs text-amber-600 bg-amber-100 px-2 py-1 rounded">
+                      ~{remainingTime}s remaining
+                    </span>
+                  )}
+                </div>
               </div>
               {/* Progress bar */}
               {currentNote && (
@@ -249,6 +295,7 @@ export const NoteSubmission: React.FC = () => {
               onBack={handleBack}
               onNext={handleSubmit}
               isProcessing={isProcessing}
+              noteText={notes}
             />
           )}
 

@@ -1,0 +1,63 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage[margin=1in]{geometry}
+\usepackage{mathptmx}
+
+\title{Calculus Notes}
+\author{Test User}
+\date{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Calculus Notes}
+\fancyhead[R]{\thepage}
+
+
+\newtheorem{theorem}{Theorem}
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\section{Introduction to Calculus}
+
+Calculus is a branch of mathematics that studies continuous change. It is divided into two main branches: differential calculus and integral calculus. This document focuses on the basics of differential calculus, particularly derivatives.
+
+\section{Derivatives}
+
+The derivative of a function \( f(x) \) is a measure of how \( f(x) \) changes as \( x \) changes. It is defined as:
+
+\[
+f'(x) = \lim_{h \to 0} \frac{f(x+h) - f(x)}{h}
+\]
+
+\begin{theorem}
+If \( f(x) = x^n \), then \( f'(x) = nx^{n-1} \).
+\end{theorem}
+
+\section{Example}
+
+Consider the function \( f(x) = x^2 \). The derivative is calculated as follows:
+
+\begin{itemize}
+    \item \( f'(x) = 2x \)
+    \item At \( x=3 \), the slope is \( f'(3) = 6 \)
+\end{itemize}
+
+\section{Key Properties}
+
+Derivatives have several important properties that simplify calculations:
+
+\begin{enumerate}
+    \item \textbf{Linearity:} \((af + bg)' = af' + bg'\)
+    \item \textbf{Product Rule:} \((fg)' = f'g + fg'\)
+    \item \textbf{Chain Rule:} \((f \circ g)' = (f' \circ g) \cdot g'\)
+\end{enumerate}
+
+These properties are fundamental in solving complex calculus problems and are widely used in various applications of mathematics and science.
+
+\end{document}

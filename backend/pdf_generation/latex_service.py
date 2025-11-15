@@ -4,7 +4,7 @@ Converts any note content into well-formatted LaTeX documents using OpenAI
 OpenAI handles all formatting decisions - works for any subject (math, science, humanities, etc.)
 """
 import os
-from typing import Optional
+from typing import List, Optional
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -59,7 +59,9 @@ class LaTeXService:
         self, 
         content: str,
         title: Optional[str] = None,
-        author: Optional[str] = None
+        author: Optional[str] = None,
+        style: str = "academic",
+        font: str = "Times New Roman"
     ) -> str:
         """
         Generate a complete, well-formatted LaTeX document from any note content.
@@ -82,11 +84,11 @@ class LaTeXService:
         
         if not self.client:
             print("OpenAI client not available, using basic LaTeX template")
-            return self._generate_basic_latex(content, title, author)
+            return self._generate_basic_latex(content, title, author, style, font)
         
         try:
             # Let OpenAI do ALL the work - it will determine subject, format math, create structure
-            prompt = self._create_latex_conversion_prompt(content, title, author)
+            prompt = self._create_latex_conversion_prompt(content, title, author, style, font)
             
             print(f"Calling OpenAI API for LaTeX generation (content length: {len(content)} chars)...")
             print(f"Prompt length: {len(prompt)} chars")
@@ -148,6 +150,8 @@ class LaTeXService:
             if not latex_content.startswith("\\documentclass"):
                 print("OpenAI didn't return full document, wrapping content...")
                 latex_content = self._wrap_in_document_structure(latex_content, title, author)
+
+            latex_content = self._ensure_theorem_environments(latex_content)
             
             print("LaTeX document generated successfully with OpenAI")
             print(f"Final LaTeX length: {len(latex_content)} chars")
@@ -158,18 +162,42 @@ class LaTeXService:
             print("Using fallback LaTeX generation...")
             import traceback
             traceback.print_exc()
-            return self._generate_basic_latex(content, title, author)
+            return self._generate_basic_latex(content, title, author, style, font)
     
     def _create_latex_conversion_prompt(
         self, 
         content: str,
         title: Optional[str],
-        author: Optional[str]
+        author: Optional[str],
+        style: str,
+        font: str
     ) -> str:
         """Create a detailed prompt for OpenAI to generate LaTeX from any content"""
         
         title_text = title if title else "Notes"
         author_text = author if author else "Student"
+
+        style_profiles = {
+            "academic": (
+                "Adopt a scholarly, publication-ready layout with clear hierarchy, theorem/definition"
+                " environments when applicable, and refined spacing suitable for research notes."
+            ),
+            "personal": (
+                "Use a friendly tone suited for personal study notes with callouts, softer color accents,"
+                " and relaxed spacing that remains organized."
+            ),
+            "minimalist": (
+                "Keep the layout extremely clean with minimalist headings, generous whitespace, and"
+                " only essential decorative elements."
+            )
+        }
+        normalized_style = (style or "academic").lower()
+        style_instruction = style_profiles.get(normalized_style, style_profiles["academic"])
+        font_choice = font or "Times New Roman"
+        font_instruction = (
+            f"Typography preference: match the '{font_choice}' family using appropriate LaTeX packages"
+            " (e.g., fontspec, mathptmx, helvet) so the entire document keeps consistent type."
+        )
         
         prompt = f"""Convert the following note content into a complete, professional LaTeX document.
 
@@ -184,6 +212,8 @@ REQUIREMENTS:
 3. Set document title: {title_text}
 4. Set author: {author_text}
 5. Use \\maketitle
+6. Style direction: {style_instruction}
+7. {font_instruction}
 
 FORMATTING INSTRUCTIONS:
 - Automatically detect the subject matter from the content
@@ -246,12 +276,42 @@ Output ONLY the LaTeX code - no explanations, no markdown code blocks."""
 """
         
         return latex_doc
+
+    def _ensure_theorem_environments(self, latex_content: str) -> str:
+        """Insert default theorem/lemma/definition declarations when missing."""
+        env_declarations = {
+            "theorem": r"\newtheorem{theorem}{Theorem}",
+            "lemma": r"\newtheorem{lemma}[theorem]{Lemma}",
+            "definition": r"\newtheorem{definition}{Definition}",
+            "corollary": r"\newtheorem{corollary}{Corollary}"
+        }
+
+        needed: List[str] = []
+        for env, declaration in env_declarations.items():
+            if f"\\begin{{{env}}}" in latex_content and declaration not in latex_content:
+                needed.append(declaration)
+
+        if not needed:
+            return latex_content
+
+        insertion_block = "\n" + "\n".join(needed) + "\n"
+        insert_at = latex_content.find("\\begin{document}")
+        if insert_at == -1:
+            print("WARNING: Couldn't find \\\"\\begin{document}\\\" when inserting theorem declarations.")
+            return insertion_block + latex_content
+
+        before = latex_content[:insert_at]
+        after = latex_content[insert_at:]
+        print("Injecting missing theorem environment declarations into LaTeX preamble")
+        return before + insertion_block + after
     
     def _generate_basic_latex(
         self, 
         content: str,
         title: Optional[str],
-        author: Optional[str]
+        author: Optional[str],
+        style: str,
+        font: str
     ) -> str:
         """Generate basic LaTeX document without AI enhancement (fallback)"""
         
@@ -259,40 +319,76 @@ Output ONLY the LaTeX code - no explanations, no markdown code blocks."""
         
         title_text = title if title else "Notes"
         author_text = author if author else "Student"
+        normalized_style = (style or "academic").lower()
         
         # Convert markdown to basic LaTeX instead of just escaping
         latex_body = self._markdown_to_basic_latex(content)
+        font_block = self._font_package_for_name(font)
+        style_block = self._style_customization_block(normalized_style)
+        extras: List[str] = []
+        for block in (font_block, style_block):
+            if block:
+                extras.extend(block.strip().splitlines())
         
-        latex_doc = r"""\documentclass[12pt,a4paper]{article}
-\usepackage[utf8]{inputenc}
-\usepackage{amsmath,amssymb,amsthm}
-\usepackage{graphicx}
-\usepackage{hyperref}
-\usepackage{fancyhdr}
-\usepackage[margin=1in]{geometry}
-
-\pagestyle{fancy}
-\fancyhf{}
-\rhead{""" + title_text + r"""}
-\cfoot{\thepage}
-
-\newtheorem{theorem}{Theorem}
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{definition}{Definition}
-
-\title{""" + title_text + r"""}
-\author{""" + author_text + r"""}
-\date{\today}
-
-\begin{document}
-\maketitle
-
-""" + latex_body + r"""
-
-\end{document}
-"""
+        preamble_lines = [
+            r"\documentclass[12pt,a4paper]{article}",
+            r"\usepackage[utf8]{inputenc}",
+            r"\usepackage{amsmath,amssymb,amsthm}",
+            r"\usepackage{graphicx}",
+            r"\usepackage{hyperref}",
+            r"\usepackage{fancyhdr}",
+            r"\usepackage[margin=1in]{geometry}",
+        ]
+        preamble_lines.extend(extras)
+        preamble_lines.extend([
+            "",
+            r"\pagestyle{fancy}",
+            r"\fancyhf{}",
+            rf"\rhead{{{title_text}}}",
+            r"\cfoot{\thepage}",
+            "",
+            r"\newtheorem{theorem}{Theorem}",
+            r"\newtheorem{lemma}[theorem]{Lemma}",
+            r"\newtheorem{definition}{Definition}",
+            "",
+            rf"\title{{{title_text}}}",
+            rf"\author{{{author_text}}}",
+            r"\date{\today}",
+            "",
+            r"\begin{document}",
+            r"\maketitle",
+            "",
+        ])
+        preamble = "\n".join(preamble_lines)
+        latex_doc = preamble + latex_body + "\n\n\\end{document}\n"
         
         return latex_doc
+
+    def _font_package_for_name(self, font: Optional[str]) -> str:
+        """Map friendly font names to LaTeX package directives."""
+        if not font:
+            font = "Times New Roman"
+        normalized = font.lower()
+        if "helvetica" in normalized or "arial" in normalized:
+            return "\\usepackage[scaled]{helvet}\n\\renewcommand\\familydefault{\\sfdefault}\n"
+        if "palatino" in normalized:
+            return "\\usepackage{mathpazo}\n"
+        if "garamond" in normalized:
+            return "\\usepackage{garamondx}\n"
+        if "monospace" in normalized or "mono" in normalized:
+            return "\\renewcommand{\\familydefault}{\\ttdefault}\n"
+        # Default serif similar to Times
+        return "\\usepackage{mathptmx}\n"
+
+    def _style_customization_block(self, style: str) -> str:
+        """Return small LaTeX tweaks that mimic the requested style."""
+        normalized = (style or "academic").lower()
+        styles = {
+            "academic": "\\linespread{1.1}\n\\setlength{\\parindent}{15pt}\n",
+            "personal": "\\setlength{\\parindent}{10pt}\n\\setlength{\\parskip}{8pt}\n",
+            "minimalist": "\\setlength{\\parindent}{0pt}\n\\setlength{\\parskip}{10pt}\n"
+        }
+        return styles.get(normalized, styles["academic"])
     
     def _markdown_to_basic_latex(self, text: str) -> str:
         """Convert basic markdown to LaTeX (simple conversion for fallback)"""

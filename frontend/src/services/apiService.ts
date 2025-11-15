@@ -28,6 +28,13 @@ export interface ProcessingSettings {
   add_headers: boolean;
   expand: boolean;
   summarize: boolean;
+  focus_topics?: string[];
+  latex_style?: string;
+  font_preference?: string;
+}
+
+export interface TopicSuggestion {
+  topics: string[];
 }
 
 export interface NoteRequest {
@@ -280,6 +287,27 @@ export const generatePDF = async (noteId: number): Promise<GeneratePDFResponse> 
     return await response.json();
   } catch (error) {
     console.error('Error generating PDF:', error);
+    throw error;
+  }
+};
+
+export const previewTopics = async (text: string): Promise<TopicSuggestion> => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/preview-topics`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({ text }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get topic suggestions');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error getting topic suggestions:', error);
     throw error;
   }
 };
