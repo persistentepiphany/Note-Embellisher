@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { exportToWord, downloadTextFile } from '../utils/exportUtils';
 import { FormattedContent } from './FormattedContent';
@@ -21,12 +21,53 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
   const [showContent, setShowContent] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const apiBaseUrl = useMemo(() => {
+    const metaEnv = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
+    return metaEnv.VITE_API_BASE_URL || 'http://localhost:8080';
+  }, []);
 
   useEffect(() => {
     // Trigger the fade-in animation
     const timer = setTimeout(() => setShowContent(true), 300);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!noteId || pdfUrl) {
+      return;
+    }
+
+    let active = true;
+    const generate = async () => {
+      setPdfLoading(true);
+      setPdfError(null);
+      try {
+        const result = await generatePDF(noteId);
+        if (!active) return;
+        if (!result?.pdf_url) {
+          throw new Error('PDF generation succeeded but no file URL was returned.');
+        }
+        setPdfUrl(`${apiBaseUrl}${result.pdf_url}`);
+      } catch (error) {
+        if (!active) return;
+        console.error('Error generating PDF preview:', error);
+        setPdfError(error instanceof Error ? error.message : 'Failed to generate PDF preview.');
+      } finally {
+        if (active) {
+          setPdfLoading(false);
+        }
+      }
+    };
+
+    generate();
+
+    return () => {
+      active = false;
+    };
+  }, [noteId, pdfUrl, apiBaseUrl]);
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -52,7 +93,6 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
       const result = await generatePDF(noteId);
       
       // Open the PDF in a new tab
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
       const pdfUrl = `${apiBaseUrl}${result.pdf_url}`;
       window.open(pdfUrl, '_blank');
       
@@ -202,6 +242,34 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
             </svg>
             <span>Save to Drive</span>
           </button>
+        </div>
+      </div>
+
+      {/* PDF Preview */}
+      <div className="space-y-3 mb-6">
+        <div className="flex items-center justify-between">
+          <h4 className="text-lg font-medium text-slate-700">LaTeX PDF Preview</h4>
+          {pdfLoading && (
+            <span className="text-sm text-amber-600">Generating preview...</span>
+          )}
+        </div>
+        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+          {pdfUrl ? (
+            <iframe
+              src={pdfUrl}
+              className="w-full h-[600px]"
+              title="Note PDF Preview"
+              loading="lazy"
+            />
+          ) : (
+            <div className="p-6 text-center text-slate-500 text-sm">
+              {pdfLoading
+                ? 'Compiling LaTeX and generating PDF preview...'
+                : pdfError
+                  ? `Preview unavailable: ${pdfError}`
+                  : 'PDF preview will appear here once generated.'}
+            </div>
+          )}
         </div>
       </div>
 

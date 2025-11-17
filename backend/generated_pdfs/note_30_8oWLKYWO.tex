@@ -1,0 +1,164 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage[margin=1in]{geometry}
+\usepackage{mathptmx}
+
+\title{Note 30}
+\author{maximkazakov2005@gmail.com}
+\date{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Note 30}
+\fancyhead[R]{\thepage}
+\fancyfoot[C]{Department of Mathematics, University of Manchester}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\section{Introduction}
+
+In the realm of numerical analysis, the computation of definite integrals—often referred to as quadrature—is a vital aspect. This document delves into various numerical integration techniques, highlighting their applications, advantages, and potential pitfalls. We explore the concepts of trapezium and Simpson's rules, the Runge phenomenon, and composite integration strategies. The aim is to enhance our understanding of how to effectively and accurately perform numerical integration.
+
+\section{Basic Numerical Integration Techniques}
+
+\subsection{Trapezium Rule}
+
+The \textbf{Trapezium Rule} is a foundational method in numerical integration that approximates the integral of a function by dividing the area under the curve into trapezoids. The formula for the trapezium rule is given by:
+
+\[
+\int_a^b f(x) \, dx \approx \frac{h}{2} \left( f(x_0) + f(x_n) \right)
+\]
+
+where:
+- \( h = b - a \)
+- \( x_0 = a \)
+- \( x_n = b \)
+
+\paragraph{Key Points:}
+\begin{itemize}
+    \item \textbf{Single-step Approximation:} Utilizes only two points, making it suitable for simple functions.
+    \item \textbf{Error Bound:} The absolute error for this rule can be expressed as:
+    \[
+    E_1(f) \leq \frac{h^3}{12} M_2
+    \]
+    where \( M_2 \) is the maximum absolute value of the second derivative of \( f \) over the interval \([a, b]\).
+\end{itemize}
+
+\subsection{Simpson's Rule}
+
+\textbf{Simpson's Rule} enhances the trapezium rule by using quadratic interpolation, thereby offering greater accuracy for polynomial functions up to the third degree. The formula is:
+
+\[
+\int_a^b f(x) \, dx \approx \frac{h}{3} \left( f(x_0) + 4f\left(\frac{x_0 + x_n}{2}\right) + f(x_n) \right)
+\]
+
+\paragraph{Key Points:}
+\begin{itemize}
+    \item \textbf{Higher Accuracy:} Applies to quadratic polynomials and provides a better approximation for curves.
+    \item \textbf{Error Bound:} Expressed as:
+    \[
+    E_2(f) \leq \frac{h^5}{90} M_4
+    \]
+    where \( M_4 \) is the maximum absolute value of the fourth derivative of \( f \).
+\end{itemize}
+
+\section{The Runge Phenomenon Revisited}
+
+\subsection{Understanding the Runge Phenomenon}
+
+The \textbf{Runge Phenomenon} illustrates the issues that arise with polynomial interpolation, particularly when increasing the degree of the interpolating polynomial leads to greater errors instead of diminishing them. This is especially notable when approximating functions with significant variations.
+
+\paragraph{Example:}
+Consider the function:
+
+\[
+f(x) = \frac{1}{1 + x^2}
+\]
+
+on the interval \([-5, 5]\). The true integral is:
+
+\[
+\int_{-5}^{5} \frac{1}{1 + x^2} \, dx = \arctan(x) \bigg|_{-5}^{5} \approx 2.7468
+\]
+
+When applying Newton-Cotes quadrature:
+
+\[
+I_n(f) = \int_{-5}^{5} p_n(x) \, dx
+\]
+
+where \( p_n(x) \) is the interpolation polynomial at \( n + 1 \) equispaced points, we may observe absolute errors that yield negative results, even for a strictly positive function. This anomaly occurs because some weights in the quadrature rule become negative.
+
+\section{Composite Integration Rules}
+
+\subsection{Composite Trapezium Rule}
+
+To improve accuracy, we can \textbf{subdivide} the interval into smaller segments, applying lower-order schemes like the trapezium rule on these subintervals. This is known as the \textbf{Composite Trapezium Rule}.
+
+\paragraph{Formula:}
+The integral can be approximated as:
+
+\[
+\int_a^b f(x) \, dx \approx \sum_{j=0}^{n-1} \int_{x_j}^{x_{j+1}} f(x) \, dx
+\]
+
+Here, the segments are defined as:
+- \( x_0 = a \)
+- \( x_j = a + jh \) for \( 0 \leq j \leq n \)
+- \( h = \frac{b - a}{n} \)
+
+\paragraph{Composite Approximation:}
+\[
+\int_a^b f(x) \, dx \approx h \left[ \frac{1}{2} f(x_0) + f(x_1) + \ldots + f(x_{n-1}) + \frac{1}{2} f(x_n) \right]
+\]
+
+\paragraph{Example Calculation:}
+Consider \( f(x) = \frac{1}{1 + x} \) and apply the composite trapezium rule with \( h = 0.1 \) on the interval \([1, 2]\):
+
+\[
+\int_1^2 \frac{1}{1 + x} \, dx \approx 0.1 \left[ \frac{1}{4} + 1.1 + \ldots + 1.9 + \frac{1}{6} \right] = 0.4056
+\]
+
+The exact integral is 0.4055 to four significant figures, demonstrating the precision of numerical methods.
+
+\subsection{Theorem on Error Bounds}
+
+\textbf{Theorem 3.3:} For a function \( f \in C^2(a, b) \) and the subdivision defined above, there exists \( \mu \in (a, b) \) such that:
+
+\[
+\int_a^b f(x) \, dx = h \left[ \frac{1}{2} f(x_0) + f(x_1) + \ldots + f(x_{n-1}) + \frac{1}{2} f(x_n) \right] - \frac{1}{12}h^2(b - a) f''(\mu)
+\]
+
+\paragraph{Error Bound:}
+If \( M_2 = \max_{a \leq x \leq b} |f''(x)| \), the absolute error is bounded by:
+
+\[
+E(f) \leq \frac{1}{12}h^2(b - a) M_2
+\]
+
+\subsection{Example of Error Computation}
+
+For the function \( f(x) = \frac{e^{-x}}{x} \) and the integral \(\int_1^2 e^{-x}/x \, dx\), we want to determine an \( h \) that keeps the approximation error below \( 10^{-5} \).
+
+\paragraph{Analysis:}
+The error for the composite trapezium rule is:
+
+\[
+E(f) \leq \frac{h^2}{12(b - a)} M_2
+\]
+
+By calculating the second derivative and establishing bounds, we can derive the suitable step size \( h \).
+
+\section{Conclusion}
+
+Numerical integration is a powerful tool for approximating definite integrals, particularly when analytical solutions are difficult or impossible to obtain. Understanding the strengths and limitations of various techniques—particularly the trapezium and Simpson's rules, as well as the impact of polynomial degree on accuracy—is crucial for effective application in mathematical analysis. This document outlines essential concepts and methodologies that form the foundation of numerical integration, providing a pathway for further exploration in advanced mathematical topics.
+
+\end{document}

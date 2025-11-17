@@ -1,12 +1,15 @@
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 import json
 from fastapi.security import OAuth2PasswordBearer
 import sys
 import os
+import secrets
+from datetime import datetime, timezone
 from pydantic import BaseModel
 
 print("=" * 50)
@@ -26,7 +29,7 @@ except ImportError as e:
 
 # Optional imports - make everything optional for minimal deployment
 try:
-    from core.database import get_db, Note
+    from core.database import get_db, Note, GoogleDriveToken
     DATABASE_AVAILABLE = True
 except ImportError as e:
     print(f"Database not available: {e}")
@@ -52,6 +55,15 @@ try:
 except ImportError as e:
     print(f"Dropbox service not available: {e}")
     DROPBOX_AVAILABLE = False
+
+try:
+    from services.document_export_service import export_service, DOCX_AVAILABLE
+    EXPORT_SERVICE_AVAILABLE = True
+except ImportError as e:
+    print(f"Document export service not available: {e}")
+    export_service = None
+    DOCX_AVAILABLE = False
+    EXPORT_SERVICE_AVAILABLE = False
 
 # Optional OCR service - disable if not available
 try:
@@ -79,6 +91,14 @@ except ImportError as e:
     PDF_COMPILER_AVAILABLE = False
     pdf_compiler = None
 
+try:
+    from services.google_drive_service import google_drive_service
+    GOOGLE_DRIVE_SERVICE_AVAILABLE = google_drive_service.is_configured
+except ImportError as e:
+    print(f"Google Drive service not available: {e}")
+    google_drive_service = None
+    GOOGLE_DRIVE_SERVICE_AVAILABLE = False
+
 # Optional Firebase SDK
 firebase_init_module = None
 try:
@@ -99,6 +119,170 @@ except ImportError:
 
 # ----- firebase-fix: Add authentication dependency -----
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
+
+BACKEND_DIR = os.path.dirname(__file__)
+GENERATED_FILES_ROUTE = "/generated_pdfs"
+DRIVE_STATE_TTL_SECONDS = 600
+drive_auth_states: Dict[str, Dict[str, datetime]] = {}
+
+
+def _cleanup_drive_states() -> None:
+    cutoff = datetime.now(timezone.utc).timestamp() - DRIVE_STATE_TTL_SECONDS
+    stale_keys = [state for state, data in drive_auth_states.items() if data["created_at"].timestamp() < cutoff]
+    for key in stale_keys:
+        drive_auth_states.pop(key, None)
+
+
+def _remember_drive_state(state: str, user_id: str) -> None:
+    _cleanup_drive_states()
+    drive_auth_states[state] = {
+        "user_id": user_id,
+        "created_at": datetime.now(timezone.utc)
+    }
+
+
+def _consume_drive_state(state: str) -> Optional[str]:
+    data = drive_auth_states.pop(state, None)
+    if not data:
+        return None
+    if (datetime.now(timezone.utc) - data["created_at"]).total_seconds() > DRIVE_STATE_TTL_SECONDS:
+        return None
+    return data["user_id"]
+
+
+def absolute_export_path(path: Optional[str]) -> Optional[str]:
+    if not path:
+        return None
+    if os.path.isabs(path):
+        return path
+    return os.path.abspath(os.path.join(BACKEND_DIR, path))
+
+
+def export_file_exists(path: Optional[str]) -> bool:
+    abs_path = absolute_export_path(path)
+    return bool(abs_path and os.path.exists(abs_path))
+
+
+def build_generated_file_url(path: Optional[str]) -> Optional[str]:
+    if not path:
+        return None
+    filename = os.path.basename(path)
+    if not filename:
+        return None
+    return f"{GENERATED_FILES_ROUTE}/{filename}"
+
+
+def _note_export_slug(note: "Note") -> str:
+    user_fragment = (note.user_id or "user")[:8].replace("-", "")
+    return f"note_{note.id}_{user_fragment}"
+
+
+def _generate_pdf_assets(note: "Note", author: str, slug: str) -> Dict[str, Optional[str]]:
+    if not (LATEX_AVAILABLE and PDF_COMPILER_AVAILABLE and latex_service and pdf_compiler):
+        raise RuntimeError("PDF generation services unavailable")
+
+    settings_schema = settings_to_schema(note.settings_json)
+    latex_content = latex_service.generate_latex_document(
+        content=note.processed_content,
+        title=f"Note {note.id}",
+        author=author,
+        style=settings_schema.latex_style,
+        font=settings_schema.font_preference
+    )
+
+    pdf_path, tex_path, error = pdf_compiler.compile_to_pdf(
+        latex_content=latex_content,
+        output_filename=slug,
+        save_tex=True
+    )
+
+    if error or not pdf_path:
+        raise RuntimeError(error or "Unknown PDF compilation error")
+
+    pdf_path_abs = absolute_export_path(pdf_path)
+    tex_path_abs = absolute_export_path(tex_path) if tex_path else None
+    note.pdf_path = pdf_path_abs
+    note.tex_path = tex_path_abs
+
+    return {
+        "pdf_path": pdf_path_abs,
+        "tex_path": tex_path_abs,
+        "pdf_url": build_generated_file_url(pdf_path_abs),
+    }
+
+
+def ensure_note_exports(
+    note: "Note",
+    author_email: Optional[str] = None,
+    force: bool = False,
+    formats: Optional[List[str]] = None,
+) -> Dict[str, Optional[str]]:
+    """Ensure PDF/DOCX/TXT exports exist for the note."""
+
+    if not note or not note.processed_content:
+        return {}
+
+    exports: Dict[str, Optional[str]] = {}
+    slug = _note_export_slug(note)
+    author = author_email or note.user_id or "Student"
+    requested_formats = set(formats or ["pdf", "docx", "txt"])
+
+    wants_pdf = "pdf" in requested_formats
+    wants_docx = "docx" in requested_formats
+    wants_txt = "txt" in requested_formats
+
+    need_pdf = wants_pdf and (force or not export_file_exists(note.pdf_path))
+    if need_pdf:
+        try:
+            pdf_result = _generate_pdf_assets(note, author, slug)
+            exports.update(pdf_result)
+        except Exception as e:
+            print(f"PDF export failed for note {note.id}: {e}")
+
+    if export_service:
+        need_docx = wants_docx and (force or not export_file_exists(note.docx_path))
+        if need_docx and DOCX_AVAILABLE:
+            try:
+                docx_path = export_service.generate_docx(
+                    note.processed_content,
+                    f"Note {note.id}",
+                    slug
+                )
+                docx_abs = absolute_export_path(docx_path)
+                note.docx_path = docx_abs
+                exports["docx_url"] = build_generated_file_url(docx_abs)
+            except Exception as e:
+                print(f"DOCX export failed for note {note.id}: {e}")
+
+        need_txt = wants_txt and (force or not export_file_exists(note.txt_path))
+        if need_txt:
+            try:
+                txt_path = export_service.generate_txt(note.processed_content, slug)
+                txt_abs = absolute_export_path(txt_path)
+                note.txt_path = txt_abs
+                exports["txt_url"] = build_generated_file_url(txt_abs)
+            except Exception as e:
+                print(f"TXT export failed for note {note.id}: {e}")
+
+    return exports
+
+
+def _get_drive_token(db: Session, user_id: str) -> Optional["GoogleDriveToken"]:
+    if not DATABASE_AVAILABLE:
+        return None
+    return db.query(GoogleDriveToken).filter(GoogleDriveToken.user_id == user_id).first()
+
+
+def _update_drive_token_from_credentials(token: "GoogleDriveToken", credentials: Any) -> None:
+    token.access_token = getattr(credentials, "token", None)
+    refresh_token = getattr(credentials, "refresh_token", None)
+    if refresh_token:
+        token.refresh_token = refresh_token
+    token.token_expiry = getattr(credentials, "expiry", None)
+    scopes = getattr(credentials, "scopes", None)
+    if scopes:
+        token.token_scope = " ".join(scopes)
+    token.token_type = getattr(credentials, "token_type", "Bearer")
 
 def ensure_processing_settings(settings_payload: Union[ProcessingSettings, ProcessingSettingsSchema, dict, str, None]) -> ProcessingSettings:
     """Normalize any incoming settings payload into a ProcessingSettings instance."""
@@ -148,6 +332,9 @@ def note_to_response(note: "Note", progress_override: Optional[int] = None, prog
         image_filename=note.image_filename,
         image_type=note.image_type,
         input_type=note.input_type,
+        pdf_url=build_generated_file_url(note.pdf_path),
+        docx_url=build_generated_file_url(note.docx_path),
+        txt_url=build_generated_file_url(note.txt_path),
         created_at=note.created_at,
         updated_at=note.updated_at
     )
@@ -250,13 +437,84 @@ async def root():
             "dropbox": DROPBOX_AVAILABLE,
             "ocr": OCR_AVAILABLE,
             "latex": LATEX_AVAILABLE,
-            "pdf_compiler": PDF_COMPILER_AVAILABLE
+            "pdf_compiler": PDF_COMPILER_AVAILABLE,
+            "google_drive": GOOGLE_DRIVE_SERVICE_AVAILABLE,
+            "exports": EXPORT_SERVICE_AVAILABLE
         }
     }
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": "2025-10-26"}
+
+
+@app.get("/google-drive/status")
+async def google_drive_status(
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    token = _get_drive_token(db, user["uid"])
+    return {
+        "connected": bool(token and token.refresh_token),
+        "expires_at": token.token_expiry if token else None,
+        "has_refresh_token": bool(token and token.refresh_token)
+    }
+
+
+@app.get("/google-drive/auth-url")
+async def google_drive_auth_url(
+    user: dict = Depends(get_current_user)
+):
+    if not (GOOGLE_DRIVE_SERVICE_AVAILABLE and google_drive_service and google_drive_service.is_configured):
+        raise HTTPException(status_code=503, detail="Google Drive integration is not configured")
+
+    state = google_drive_service.generate_state()
+    _remember_drive_state(state, user["uid"])
+    auth_url, _ = google_drive_service.generate_auth_url(state)
+    return {"auth_url": auth_url, "state": state}
+
+
+@app.get("/google-drive/callback")
+async def google_drive_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    if not (GOOGLE_DRIVE_SERVICE_AVAILABLE and google_drive_service and google_drive_service.is_configured):
+        return HTMLResponse("Google Drive integration is not available", status_code=503)
+
+    if error:
+        return HTMLResponse(f"Authorization failed: {error}", status_code=400)
+
+    if not code or not state:
+        return HTMLResponse("Missing authorization code or state", status_code=400)
+
+    user_id = _consume_drive_state(state)
+    if not user_id:
+        return HTMLResponse("Authorization state expired. Please try again.", status_code=400)
+
+    try:
+        credentials = google_drive_service.exchange_code_for_credentials(code)
+    except Exception as e:
+        return HTMLResponse(f"Failed to exchange code: {e}", status_code=400)
+
+    token = _get_drive_token(db, user_id)
+    if not token:
+        token = GoogleDriveToken(user_id=user_id)
+        db.add(token)
+
+    _update_drive_token_from_credentials(token, credentials)
+    db.commit()
+
+    success_redirect = getattr(google_drive_service, "success_redirect", None)
+    if success_redirect:
+        return RedirectResponse(f"{success_redirect}?connected=true", status_code=302)
+
+    return HTMLResponse("Google Drive connected successfully. You can close this window.")
 
 @app.get("/debug/all-notes")
 async def debug_all_notes(db: Session = Depends(get_db)):
@@ -697,80 +955,219 @@ async def generate_pdf(
         )
     
     try:
-        settings_schema = settings_to_schema(db_note.settings_json)
-        # Simple metadata
-        title = f"Note {note_id}"
-        author = current_user.get("email", "Student")
-        
-        # Use the processed content (already enhanced by ChatGPT)
-        content = db_note.processed_content
-        
-        print(f"Generating LaTeX document for note {note_id}")
-        print(f"Content length to convert: {len(content)} characters")
-        
-        # Let OpenAI handle ALL formatting - it will determine subject, structure, math, etc.
-        latex_content = latex_service.generate_latex_document(
-            content=content,
-            title=title,
-            author=author,
-            style=settings_schema.latex_style,
-            font=settings_schema.font_preference
+        ensure_note_exports(
+            db_note,
+            author_email=current_user.get("email"),
+            force=True,
+            formats=["pdf"]
         )
-        
-        print(f"LaTeX generation complete. Length: {len(latex_content)} characters")
-        print(f"Compiling PDF for note {note_id}")
-        
-        # Compile to PDF
-        pdf_path, tex_path, error = pdf_compiler.compile_to_pdf(
-            latex_content=latex_content,
-            output_filename=f"note_{note_id}_{current_user['uid'][:8]}",
-            save_tex=True
-        )
-        
-        if error or not pdf_path:
-            raise HTTPException(
-                status_code=500,
-                detail=f"PDF compilation failed: {error}"
-            )
-        
-        print(f"PDF generated successfully: {pdf_path}")
-        
-        # Read the .tex file to include in response for debugging
-        tex_content_preview = None
-        if tex_path and os.path.exists(tex_path):
-            try:
-                with open(tex_path, 'r', encoding='utf-8') as f:
-                    tex_full = f.read()
-                    tex_content_preview = {
-                        "length": len(tex_full),
-                        "first_500": tex_full[:500],
-                        "last_500": tex_full[-500:],
-                        "has_end_document": "\\end{document}" in tex_full
-                    }
-            except Exception as e:
-                print(f"Could not read .tex file for preview: {e}")
-        
-        # Return PDF information
-        return {
-            "success": True,
-            "note_id": note_id,
-            "pdf_path": pdf_path,
-            "tex_path": tex_path,
-            "pdf_url": pdf_compiler.get_pdf_url(pdf_path),
-            "message": "PDF generated successfully",
-            "tex_preview": tex_content_preview  # For debugging
-        }
-        
-    except HTTPException:
-        raise
+        db.commit()
     except Exception as e:
-        print(f"Error generating PDF for note {note_id}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate PDF: {str(e)}"
+        db.rollback()
+        print(f"Error generating PDF for note {note_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+
+    tex_content_preview = None
+    tex_path_abs = absolute_export_path(db_note.tex_path)
+    if tex_path_abs and os.path.exists(tex_path_abs):
+        try:
+            with open(tex_path_abs, 'r', encoding='utf-8') as f:
+                tex_full = f.read()
+                tex_content_preview = {
+                    "length": len(tex_full),
+                    "first_500": tex_full[:500],
+                    "last_500": tex_full[-500:],
+                    "has_end_document": "\\end{document}" in tex_full
+                }
+        except Exception as e:
+            print(f"Could not read .tex file for preview: {e}")
+
+    return {
+        "success": True,
+        "note_id": note_id,
+        "pdf_path": db_note.pdf_path,
+        "tex_path": db_note.tex_path,
+        "pdf_url": build_generated_file_url(db_note.pdf_path),
+        "message": "PDF generated successfully",
+        "tex_preview": tex_content_preview
+    }
+
+
+@app.post("/notes/{note_id}/generate-docx")
+async def generate_docx(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+    if not export_service:
+        raise HTTPException(status_code=503, detail="Document export service unavailable")
+    if not DOCX_AVAILABLE:
+        raise HTTPException(status_code=503, detail="python-docx dependency missing")
+
+    db_note = db.query(Note).filter(
+        Note.id == note_id,
+        Note.user_id == current_user["uid"]
+    ).first()
+
+    if not db_note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    if not db_note.processed_content:
+        raise HTTPException(status_code=400, detail="Note must be processed before exporting")
+
+    try:
+        ensure_note_exports(
+            db_note,
+            author_email=current_user.get("email"),
+            force=True,
+            formats=["docx"]
         )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to generate DOCX: {str(e)}")
+
+    docx_url = build_generated_file_url(db_note.docx_path)
+    if not docx_url:
+        raise HTTPException(status_code=500, detail="DOCX file not available")
+
+    return {
+        "success": True,
+        "note_id": note_id,
+        "docx_path": db_note.docx_path,
+        "docx_url": docx_url
+    }
+
+
+@app.post("/notes/{note_id}/generate-txt")
+async def generate_txt(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+    if not export_service:
+        raise HTTPException(status_code=503, detail="Document export service unavailable")
+
+    db_note = db.query(Note).filter(
+        Note.id == note_id,
+        Note.user_id == current_user["uid"]
+    ).first()
+
+    if not db_note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    if not db_note.processed_content:
+        raise HTTPException(status_code=400, detail="Note must be processed before exporting")
+
+    try:
+        ensure_note_exports(
+            db_note,
+            author_email=current_user.get("email"),
+            force=True,
+            formats=["txt"]
+        )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to generate TXT: {str(e)}")
+
+    txt_url = build_generated_file_url(db_note.txt_path)
+    if not txt_url:
+        raise HTTPException(status_code=500, detail="TXT file not available")
+
+    return {
+        "success": True,
+        "note_id": note_id,
+        "txt_path": db_note.txt_path,
+        "txt_url": txt_url
+    }
+
+
+@app.post("/notes/{note_id}/upload-to-drive")
+async def upload_note_to_drive(
+    note_id: int,
+    file_format: str = "pdf",
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if not (GOOGLE_DRIVE_SERVICE_AVAILABLE and google_drive_service and google_drive_service.is_configured):
+        raise HTTPException(status_code=503, detail="Google Drive integration is not configured")
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    allowed_formats = {"pdf", "docx", "txt"}
+    normalized_format = file_format.lower()
+    if normalized_format not in allowed_formats:
+        raise HTTPException(status_code=400, detail="Invalid file format")
+
+    db_note = db.query(Note).filter(
+        Note.id == note_id,
+        Note.user_id == current_user["uid"]
+    ).first()
+
+    if not db_note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    if not db_note.processed_content:
+        raise HTTPException(status_code=400, detail="Note must be processed before uploading")
+
+    try:
+        ensure_note_exports(
+            db_note,
+            author_email=current_user.get("email"),
+            force=False,
+            formats=[normalized_format]
+        )
+        db.commit()
+    except Exception as export_error:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to prepare file: {str(export_error)}")
+
+    path_lookup = {
+        "pdf": db_note.pdf_path,
+        "docx": db_note.docx_path,
+        "txt": db_note.txt_path
+    }
+    mime_lookup = {
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "txt": "text/plain"
+    }
+
+    local_path = absolute_export_path(path_lookup[normalized_format])
+    if not local_path or not os.path.exists(local_path):
+        raise HTTPException(status_code=500, detail="Exported file not found on server")
+
+    token = _get_drive_token(db, current_user["uid"])
+    if not token or not token.refresh_token:
+        raise HTTPException(status_code=401, detail="Google Drive account not connected")
+
+    credentials = google_drive_service.build_credentials_from_record(token)
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Stored Google Drive credentials are invalid")
+
+    try:
+        upload_result = google_drive_service.upload_file(
+            credentials,
+            file_path=local_path,
+            mime_type=mime_lookup[normalized_format],
+            drive_filename=os.path.basename(local_path),
+            description=f"Note Embellisher {normalized_format.upper()} export"
+        )
+    except Exception as upload_error:
+        raise HTTPException(status_code=500, detail=f"Google Drive upload failed: {str(upload_error)}")
+
+    # Persist any refreshed tokens
+    _update_drive_token_from_credentials(token, credentials)
+    db.commit()
+
+    return {
+        "success": True,
+        "note_id": note_id,
+        "format": normalized_format,
+        "drive_file": upload_result
+    }
 
 async def process_note_background(note_id: int, settings):
     """
@@ -798,6 +1195,10 @@ async def process_note_background(note_id: int, settings):
         # Update the note with processed content
         db_note.processed_content = processed_content
         db_note.status = ProcessingStatus.COMPLETED
+        try:
+            ensure_note_exports(db_note)
+        except Exception as export_error:
+            print(f"Export generation failed for note {note_id}: {export_error}")
         db.commit()
         print(f"Successfully processed note {note_id}")
         
@@ -859,6 +1260,10 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         # Update the note with processed content
         db_note.processed_content = processed_content
         db_note.status = ProcessingStatus.COMPLETED
+        try:
+            ensure_note_exports(db_note)
+        except Exception as export_error:
+            print(f"Export generation failed for image note {note_id}: {export_error}")
         db.commit()
         print(f"Successfully processed image note {note_id}")
         
@@ -931,6 +1336,10 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         db_note.text = f"Processed {len(image_urls)} images with GPT-4 Vision"
         db_note.processed_content = processed_content
         db_note.status = ProcessingStatus.COMPLETED
+        try:
+            ensure_note_exports(db_note)
+        except Exception as export_error:
+            print(f"Export generation failed for multi-image note {note_id}: {export_error}")
         db.commit()
         print(f"Successfully processed multiple images for note {note_id}")
         

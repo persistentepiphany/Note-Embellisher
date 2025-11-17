@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import func
@@ -34,6 +34,11 @@ class Note(Base):
     image_filename = Column(String, nullable=True)  # Original filename
     image_type = Column(String(10), nullable=True)  # 'image' or 'pdf'
     input_type = Column(String(10), default="text")  # 'text' or 'image'
+    # Export-related fields
+    pdf_path = Column(String, nullable=True)
+    tex_path = Column(String, nullable=True)
+    docx_path = Column(String, nullable=True)
+    txt_path = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
@@ -47,8 +52,49 @@ class Note(Base):
         """Store settings as JSON string"""
         self.settings_json = json.dumps(value)
 
+
+class GoogleDriveToken(Base):
+    __tablename__ = "google_drive_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, unique=True, index=True, nullable=False)
+    access_token = Column(Text, nullable=True)
+    refresh_token = Column(Text, nullable=True)
+    token_expiry = Column(DateTime(timezone=True), nullable=True)
+    token_scope = Column(Text, nullable=True)
+    token_type = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_note_columns():
+    """Add new export-related columns to the notes table if they are missing."""
+    try:
+        inspector = inspect(engine)
+        columns = {col["name"] for col in inspector.get_columns("notes")}
+        required_columns = {
+            "pdf_path": "TEXT",
+            "tex_path": "TEXT",
+            "docx_path": "TEXT",
+            "txt_path": "TEXT"
+        }
+        missing = [name for name in required_columns if name not in columns]
+        if not missing:
+            return
+        with engine.connect() as conn:
+            for name in missing:
+                ddl = required_columns[name]
+                conn.execute(text(f"ALTER TABLE notes ADD COLUMN {name} {ddl}"))
+            conn.commit()
+            print(f"Added missing note columns: {missing}")
+    except Exception as e:
+        print(f"Could not verify note columns: {e}")
+
+
+_ensure_note_columns()
 
 # Dependency to get database session
 def get_db():

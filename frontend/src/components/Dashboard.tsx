@@ -1,15 +1,23 @@
-import { Plus, Upload, Filter, Grid3x3, List, Search, LogOut, FileText, Calendar, Clock } from "lucide-react";
+import { Plus, Upload, Grid3x3, List, Search, LogOut, FileText, Calendar, Clock, Cloud } from "lucide-react";
 import { Button } from "./ui/button";
-import { ProjectCard } from "./ProjectCard";
-import { FolderCard } from "./FolderCard";
 import { EmptyState } from "./EmptyState";
 import { Input } from "./ui/input";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { getAllNotes, NoteResponse, deleteNote, generatePDF } from "../services/apiService";
-import { downloadTextFile } from "../utils/exportUtils";
+import {
+  getAllNotes,
+  NoteResponse,
+  deleteNote,
+  generatePDF,
+  generateDocx,
+  generateTxt,
+  uploadNoteToDrive,
+  getGoogleDriveStatus,
+  getGoogleDriveAuthUrl,
+  API_BASE_URL,
+} from "../services/apiService";
 import { NoteCard } from "./NoteCard";
 import {
   Select,
@@ -30,6 +38,10 @@ export function Dashboard() {
   const [notes, setNotes] = useState<NoteResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [driveConnected, setDriveConnected] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [connectingDrive, setConnectingDrive] = useState(false);
 
   const handleSignOut = async () => {
     try {
@@ -48,6 +60,7 @@ export function Dashboard() {
     try {
       setLoading(true);
       setError(null);
+      setStatusMessage(null);
       const fetchedNotes = await getAllNotes();
       
       // Ensure all notes have valid structure to prevent rendering errors
@@ -72,42 +85,214 @@ export function Dashboard() {
     }
   };
 
-  useEffect(() => {
-    fetchNotes();
-  }, []);
-
-
-
-  const handleDownloadNote = (note: NoteResponse) => {
-    const content = note.processed_content || note.text || "";
-    const filename = `note_${note.id}_${new Date(note.created_at).toISOString().split('T')[0]}.txt`;
-    downloadTextFile(content, filename);
-  };
-
-  const handleExportNotePDF = async (note: NoteResponse) => {
+  const checkDriveStatus = async () => {
     try {
-      setError(null);
-      
-      // Check if note has processed content
-      if (!note.processed_content) {
-        setError('Note must be processed before generating PDF. Please wait for processing to complete.');
-        return;
-      }
-      
-      // Call backend to generate LaTeX PDF
-      console.log(`Generating LaTeX PDF for note ${note.id}...`);
-      const result = await generatePDF(note.id);
-      
-      // Open the PDF in a new tab
-      const pdfUrl = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'}${result.pdf_url}`;
-      window.open(pdfUrl, '_blank');
-      
-      console.log('PDF generated successfully:', result);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      setError(error instanceof Error ? error.message : 'Failed to generate PDF. Please try again.');
+      const status = await getGoogleDriveStatus();
+      setDriveConnected(status.connected);
+    } catch (err) {
+      console.warn('Google Drive status unavailable:', err);
     }
   };
+
+  useEffect(() => {
+    fetchNotes();
+    checkDriveStatus();
+  }, []);
+
+  const updateNote = (noteId: number, updates: Partial<NoteResponse>) => {
+    setNotes(prev => prev.map(note => (note.id === noteId ? { ...note, ...updates } : note)));
+  };
+
+  const makeFileUrl = (path?: string | null) => {
+    if (!path) return null;
+    return `${API_BASE_URL}${path}`;
+  };
+
+  const runAction = async (noteId: number, action: string, fn: () => Promise<void>) => {
+    setPendingAction(`${action}-${noteId}`);
+    setStatusMessage(null);
+    try {
+      await fn();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      setError(message);
+      throw err;
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const isActionPending = (noteId: number, action: string) => pendingAction === `${action}-${noteId}`;
+
+  const ensurePdfUrl = async (note: NoteResponse) => {
+    if (note.pdf_url) return note.pdf_url;
+    const result = await generatePDF(note.id);
+    updateNote(note.id, { pdf_url: result.pdf_url });
+    return result.pdf_url;
+  };
+
+  const ensureDocxUrl = async (note: NoteResponse) => {
+    if (note.docx_url) return note.docx_url;
+    const result = await generateDocx(note.id);
+    updateNote(note.id, { docx_url: result.docx_url });
+    return result.docx_url;
+  };
+
+  const ensureTxtUrl = async (note: NoteResponse) => {
+    if (note.txt_url) return note.txt_url;
+    const result = await generateTxt(note.id);
+    updateNote(note.id, { txt_url: result.txt_url });
+    return result.txt_url;
+  };
+
+  const handleDownloadPdf = async (note: NoteResponse) => {
+    if (note.status !== 'completed') {
+      setError('Note is still processing. Please wait until it is completed.');
+      return;
+    }
+    try {
+      await runAction(note.id, 'pdf', async () => {
+        const pdfRelativeUrl = await ensurePdfUrl(note);
+        const fullUrl = makeFileUrl(pdfRelativeUrl);
+        if (!fullUrl) {
+          throw new Error('PDF file is not ready yet.');
+        }
+        window.open(fullUrl, '_blank', 'noopener');
+        setError(null);
+      });
+    } catch {
+      // Error handled in runAction
+    }
+  };
+
+  const handleDownloadDocx = async (note: NoteResponse) => {
+    if (note.status !== 'completed') {
+      setError('Note is still processing. Please wait until it is completed.');
+      return;
+    }
+    try {
+      await runAction(note.id, 'docx', async () => {
+        const docxRelativeUrl = await ensureDocxUrl(note);
+        const fullUrl = makeFileUrl(docxRelativeUrl);
+        if (!fullUrl) {
+          throw new Error('Word document is not ready yet.');
+        }
+        window.open(fullUrl, '_blank', 'noopener');
+        setError(null);
+      });
+    } catch {
+      // handled
+    }
+  };
+
+  const handleDownloadTxt = async (note: NoteResponse) => {
+    if (note.status !== 'completed') {
+      setError('Note is still processing. Please wait until it is completed.');
+      return;
+    }
+    try {
+      await runAction(note.id, 'txt', async () => {
+        const txtRelativeUrl = await ensureTxtUrl(note);
+        const fullUrl = makeFileUrl(txtRelativeUrl);
+        if (!fullUrl) {
+          throw new Error('TXT file is not ready yet.');
+        }
+        window.open(fullUrl, '_blank', 'noopener');
+        setError(null);
+      });
+    } catch {
+      // handled
+    }
+  };
+
+  const waitForDriveConnection = async () => {
+    for (let attempt = 0; attempt < 15; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      try {
+        const status = await getGoogleDriveStatus();
+        if (status.connected) {
+          setDriveConnected(true);
+          return true;
+        }
+      } catch (err) {
+        console.warn('Unable to check Drive status during auth:', err);
+        break;
+      }
+    }
+    return false;
+  };
+
+  const startDriveAuthFlow = async () => {
+    const { auth_url } = await getGoogleDriveAuthUrl();
+    const popup = window.open(auth_url, 'drive-auth', 'width=520,height=720');
+    const connected = await waitForDriveConnection();
+    popup?.close();
+    if (!connected) {
+      throw new Error('Google Drive connection timed out. Please try again.');
+    }
+  };
+
+  const handleDriveUpload = async (note: NoteResponse, format: 'pdf' | 'docx' | 'txt') => {
+    if (note.status !== 'completed') {
+      setError('Note is still processing. Please wait until it is completed.');
+      return;
+    }
+    try {
+      await runAction(note.id, 'drive', async () => {
+        try {
+          await uploadNoteToDrive(note.id, format);
+          setError(null);
+          setStatusMessage('Uploaded to Google Drive successfully.');
+          setDriveConnected(true);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to upload to Google Drive.';
+          if (message.toLowerCase().includes('not connected')) {
+            await startDriveAuthFlow();
+            await uploadNoteToDrive(note.id, format);
+            setStatusMessage('Google Drive connected and file uploaded successfully.');
+          } else {
+            throw new Error(message);
+          }
+        }
+      });
+    } catch {
+      // handled by runAction
+    }
+  };
+
+  const handleConnectDrive = async () => {
+    setError(null);
+    setStatusMessage(null);
+    setConnectingDrive(true);
+    try {
+      await startDriveAuthFlow();
+      setStatusMessage('Google Drive connected successfully.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to connect Google Drive.';
+      setError(message);
+    } finally {
+      setConnectingDrive(false);
+    }
+  };
+
+  const renderNoteCard = (note: NoteResponse) => (
+    <NoteCard
+      key={note.id}
+      note={note}
+      apiBaseUrl={API_BASE_URL}
+      onDownloadPdf={handleDownloadPdf}
+      onDownloadDocx={handleDownloadDocx}
+      onDownloadTxt={handleDownloadTxt}
+      onUploadToDrive={handleDriveUpload}
+      onDelete={handleDeleteNote}
+      actionStates={{
+        pdf: isActionPending(note.id, 'pdf'),
+        docx: isActionPending(note.id, 'docx'),
+        txt: isActionPending(note.id, 'txt'),
+        drive: isActionPending(note.id, 'drive'),
+      }}
+    />
+  );
 
   const handleDeleteNote = async (noteId: number) => {
     try {
@@ -115,6 +300,7 @@ export function Dashboard() {
       await deleteNote(noteId);
       console.log('Note deleted successfully');
       await fetchNotes(); // Refresh the notes list
+      setStatusMessage('Note deleted successfully.');
     } catch (error) {
       console.error('Error deleting note:', error);
       setError(error instanceof Error ? error.message : 'Failed to delete note');
@@ -134,6 +320,15 @@ export function Dashboard() {
           </div>
           
           <div className="flex items-center space-x-3">
+            <Button
+              variant={driveConnected ? "secondary" : "outline"}
+              size="sm"
+              onClick={handleConnectDrive}
+              disabled={connectingDrive}
+            >
+              <Cloud className="w-4 h-4 mr-2" />
+              {driveConnected ? 'Drive Connected' : connectingDrive ? 'Connecting...' : 'Connect Drive'}
+            </Button>
             <Button 
               variant="outline" 
               size="sm"
@@ -275,7 +470,13 @@ export function Dashboard() {
             </Button>
           </div>
         ) : (
-          <Tabs defaultValue="all" className="w-full">
+          <>
+            {statusMessage && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-6 text-green-800">
+                {statusMessage}
+              </div>
+            )}
+            <Tabs defaultValue="all" className="w-full">
             <TabsList className="mb-6">
               <TabsTrigger value="all">All Notes</TabsTrigger>
               <TabsTrigger value="recent">Recent</TabsTrigger>
@@ -289,15 +490,7 @@ export function Dashboard() {
                 <EmptyState type="projects" />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {notes.map((note) => (
-                    <NoteCard
-                      key={note.id}
-                      note={note}
-                      onDownload={handleDownloadNote}
-                      onExportPDF={handleExportNotePDF}
-                      onDelete={handleDeleteNote}
-                    />
-                  ))}
+                  {notes.map(note => renderNoteCard(note))}
                 </div>
               )}
             </TabsContent>
@@ -315,15 +508,7 @@ export function Dashboard() {
                     const dayAgo = new Date();
                     dayAgo.setDate(dayAgo.getDate() - 1);
                     return new Date(n.created_at) > dayAgo;
-                  }).map((note) => (
-                    <NoteCard
-                      key={note.id}
-                      note={note}
-                      onDownload={handleDownloadNote}
-                      onExportPDF={handleExportNotePDF}
-                      onDelete={handleDeleteNote}
-                    />
-                  ))}
+                  }).map(note => renderNoteCard(note))}
                 </div>
               )}
             </TabsContent>
@@ -337,15 +522,7 @@ export function Dashboard() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {notes.filter(n => n.status === 'completed').map((note) => (
-                    <NoteCard
-                      key={note.id}
-                      note={note}
-                      onDownload={handleDownloadNote}
-                      onExportPDF={handleExportNotePDF}
-                      onDelete={handleDeleteNote}
-                    />
-                  ))}
+                  {notes.filter(n => n.status === 'completed').map(note => renderNoteCard(note))}
                 </div>
               )}
             </TabsContent>
@@ -359,15 +536,7 @@ export function Dashboard() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {notes.filter(n => n.status === 'processing').map((note) => (
-                    <NoteCard
-                      key={note.id}
-                      note={note}
-                      onDownload={handleDownloadNote}
-                      onExportPDF={handleExportNotePDF}
-                      onDelete={handleDeleteNote}
-                    />
-                  ))}
+                  {notes.filter(n => n.status === 'processing').map(note => renderNoteCard(note))}
                 </div>
               )}
             </TabsContent>
@@ -381,19 +550,12 @@ export function Dashboard() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {notes.filter(n => n.status === 'error').map((note) => (
-                    <NoteCard
-                      key={note.id}
-                      note={note}
-                      onDownload={handleDownloadNote}
-                      onExportPDF={handleExportNotePDF}
-                      onDelete={handleDeleteNote}
-                    />
-                  ))}
+                  {notes.filter(n => n.status === 'error').map(note => renderNoteCard(note))}
                 </div>
               )}
             </TabsContent>
           </Tabs>
+          </>
         )}
       </div>
     </main>

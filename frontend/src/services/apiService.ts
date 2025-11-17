@@ -1,7 +1,8 @@
 import { getAuth } from "firebase/auth";
 
 // Use environment variable or default to localhost for development
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
+export const API_BASE_URL = env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 // ----- firebase-fix: Add authentication header helper -----
 const getAuthHeaders = async () => {
@@ -55,6 +56,9 @@ export interface NoteResponse {
   image_filename?: string | null;
   image_type?: string | null;
   input_type: string;
+  pdf_url?: string | null;
+  docx_url?: string | null;
+  txt_url?: string | null;
   created_at: string;
   updated_at?: string | null;
 }
@@ -289,6 +293,122 @@ export const generatePDF = async (noteId: number): Promise<GeneratePDFResponse> 
     console.error('Error generating PDF:', error);
     throw error;
   }
+};
+
+export interface GenerateDocxResponse {
+  success: boolean;
+  note_id: number;
+  docx_path: string;
+  docx_url: string;
+}
+
+export interface GenerateTxtResponse {
+  success: boolean;
+  note_id: number;
+  txt_path: string;
+  txt_url: string;
+}
+
+export const generateDocx = async (noteId: number): Promise<GenerateDocxResponse> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/notes/${noteId}/generate-docx`, {
+    method: 'POST',
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to generate Word document');
+  }
+
+  return await response.json();
+};
+
+export const generateTxt = async (noteId: number): Promise<GenerateTxtResponse> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/notes/${noteId}/generate-txt`, {
+    method: 'POST',
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to generate TXT file');
+  }
+
+  return await response.json();
+};
+
+export interface GoogleDriveStatusResponse {
+  connected: boolean;
+  expires_at?: string | null;
+  has_refresh_token: boolean;
+}
+
+export const getGoogleDriveStatus = async (): Promise<GoogleDriveStatusResponse> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/google-drive/status`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch Google Drive status');
+  }
+
+  return await response.json();
+};
+
+export interface GoogleDriveAuthUrlResponse {
+  auth_url: string;
+  state: string;
+}
+
+export const getGoogleDriveAuthUrl = async (): Promise<GoogleDriveAuthUrlResponse> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/google-drive/auth-url`, {
+    headers,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to start Google Drive authorization');
+  }
+
+  return await response.json();
+};
+
+export interface UploadDriveResponse {
+  success: boolean;
+  note_id: number;
+  format: 'pdf' | 'docx' | 'txt';
+  drive_file: {
+    id: string;
+    name: string;
+    webViewLink?: string;
+    webContentLink?: string;
+  };
+}
+
+export const uploadNoteToDrive = async (
+  noteId: number,
+  format: 'pdf' | 'docx' | 'txt' = 'pdf'
+): Promise<UploadDriveResponse> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(
+    `${API_BASE_URL}/notes/${noteId}/upload-to-drive?file_format=${format}`,
+    {
+      method: 'POST',
+      headers,
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to upload file to Google Drive');
+  }
+
+  return response.json();
 };
 
 export const previewTopics = async (text: string): Promise<TopicSuggestion> => {

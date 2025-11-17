@@ -1,0 +1,188 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage[margin=1in]{geometry}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+
+\title{Note 29}
+\author{maximkazakov2005@gmail.com}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+\subsection{Overview of Independence}
+
+In probability theory and statistics, independence refers to a condition where the occurrence of one event does not affect the occurrence of another. Understanding independence is crucial for building accurate models in various fields, including artificial intelligence, machine learning, and decision theory.
+
+\subsection{The Role of Bayes Networks}
+
+Bayes networks, also known as belief networks or Bayesian networks, are directed acyclic graphs (DAGs) that represent a set of variables and their conditional dependencies via a series of nodes and directed edges. This model allows for efficient computation of joint probability distributions.
+
+\subsection{The Significance of Conditionalization}
+
+Conditionalization involves updating the probability of a hypothesis based on new evidence. This is a cornerstone concept in Bayesian inference and is essential for refining predictions as more information becomes available.
+
+\subsection{An Engaging Puzzle}
+
+To better understand these concepts, we will explore a thought-provoking puzzle that illustrates the practical application of Bayes networks in real-world scenarios.
+
+\section{Understanding Independence}
+
+\subsection{Definitions of Key Terms}
+
+\textbf{Mutually Exclusive Propositions}: Propositions \( \phi_1, \ldots, \phi_n \) are said to be mutually exclusive if at most one can be true at a time:
+
+\[
+P(\phi_i \land \phi_j) = 0 \quad \text{for} \quad i \neq j.
+\]
+
+\textbf{Jointly Exhaustive Propositions}: Propositions \( \phi_1, \ldots, \phi_n \) are jointly exhaustive if at least one must be true:
+
+\[
+P(\phi_1 \lor \ldots \lor \phi_n) = 1.
+\]
+
+\textbf{Partition}: Propositions \( \phi_1, \ldots, \phi_n \) form a partition if exactly one is true:
+
+\[
+P(\phi_i \land \phi_j) = 0 \quad \text{for} \quad i \neq j \quad \text{and} \quad P(\phi_1 \lor \ldots \lor \phi_n) = 1.
+\]
+
+\subsection{Mathematical Representations}
+
+- If \( \phi_1, \ldots, \phi_n \) are mutually exclusive:
+
+\[
+P(\phi_1 \lor \ldots \lor \phi_n) = P(\phi_1) + \ldots + P(\phi_n).
+\]
+
+- If \( \phi_1, \ldots, \phi_n \) form a partition:
+
+\[
+P(\phi_1) + \ldots + P(\phi_n) = 1.
+\]
+
+\subsection{Implications in Probability Theory}
+
+Understanding the relationship between various propositions allows for more accurate modeling in probabilistic contexts, ultimately leading to better predictions and decision-making processes.
+
+\section{Bayes Networks Explained}
+
+\subsection{Structure and Function}
+
+Bayes networks consist of nodes representing random variables and directed edges indicating conditional dependencies. This structure allows for efficient representation and computation of joint probability distributions.
+
+\subsection{Example of a Bayes Network}
+
+Consider the following variables:
+- \( X_1 \): Smoking
+- \( X_2 \): Travel to Asia
+- \( X_3 \): Lung Cancer
+- \( X_4 \): Bronchitis
+- \( X_5 \): Tuberculosis
+- \( X_6 \): Coughing
+- \( X_7 \): Positive Chest X-ray
+
+These variables can be linked to illustrate the relationships and dependencies among them.
+
+\subsection{The Role of Random Variables}
+
+Each proposition can be treated as a random variable that can take on different values. For instance, \( Y_i \) can take the values \( y_i \) or \( \neg y_i \).
+
+\subsection{Joint and Conditional Probability Distributions}
+
+- The joint probability distribution can be expressed as:
+
+\[
+P(Y_1, \ldots, Y_m) = P(y_1 \land \ldots \land y_m) + P(y_1 \land \ldots \land \neg y_m) + \ldots + P(\neg y_1 \land \ldots \land \neg y_m).
+\]
+
+- The joint conditional probability distribution is represented as:
+
+\[
+P(Y_1, \ldots, Y_m | Z_1, \ldots, Z_\ell) = P(y_1 \land \ldots \land y_m | z_1 \land \ldots \land z_\ell) + \ldots + P(\neg y_1 \land \ldots \land \neg y_m | \neg z_1 \land \ldots \land \neg z_\ell).
+\]
+
+\section{Conditionalizing in Bayes Networks}
+
+\subsection{The Concept of Conditional Independence}
+
+Two propositions \( \phi \) and \( \psi \) are conditionally independent given proposition \( \pi \) if:
+
+\[
+P(\phi \land \psi | \pi) = P(\phi | \pi) P(\psi | \pi).
+\]
+
+\subsection{Relevance and Independence}
+
+- \textbf{Independence} states that knowledge of one proposition does not affect the probability of the other.
+- \textbf{Positive Relevance} occurs if:
+
+\[
+P(\phi | \psi) > P(\phi).
+\]
+
+- \textbf{Negative Relevance} occurs if:
+
+\[
+P(\phi | \psi) < P(\phi).
+\]
+
+\subsection{Real-World Applications}
+
+Understanding conditional independence allows for more efficient computation and reasoning in complex networks, enhancing applications in fields such as healthcare, finance, and artificial intelligence.
+
+\subsection{A Practical Example}
+
+Consider the variables:
+- \( X_6 \): Coughing
+- \( X_7 \): Positive Chest X-ray
+
+The relationships among these variables can be modeled to infer diagnoses based on symptoms and test results.
+
+\section{Exploring a Puzzle}
+
+\subsection{Framework of the Puzzle}
+
+Imagine a scenario involving the aforementioned variables. How would the Bayes network help in determining the probability of having lung cancer given the presence of coughing and a positive chest X-ray?
+
+\subsection{Analyzing Real-Life Scenarios}
+
+By applying Bayes' theorem, one can compute the likelihood of lung cancer based on symptoms and the patient's history, providing a clearer picture for healthcare providers.
+
+\subsection{Applying Bayes' Theorem}
+
+Using the formula:
+
+\[
+P(X_1, \ldots, X_7) = P(X_6 | X_3, X_4) P(X_7 | X_4, X_5) P(X_3 | X_1) P(X_4 | X_1) P(X_5 | X_2) P(X_1) P(X_2),
+\]
+
+one can derive probabilities that assist in diagnosis and treatment decisions.
+
+\section{Conclusion}
+
+In summary, the concepts of independence, Bayes networks, and conditionalization are pivotal in understanding and modeling complex systems where uncertainty is prevalent. By mastering these principles, one enhances their capability to make informed decisions based on probabilistic reasoning. This knowledge not only has applications in computer science but also extends to various fields, including healthcare, finance, and artificial intelligence, paving the way for innovative solutions and advancements.
+
+\bigskip
+
+\noindent\textbf{For further inquiries, please contact:}
+
+\noindent\textbf{Ian Pratt-Hartmann} \\
+Department of Computer Science \\
+Manchester University, UK \\
+Email: \href{mailto:ian.pratt@manchester.ac.uk}{ian.pratt@manchester.ac.uk}
+
+\end{document}

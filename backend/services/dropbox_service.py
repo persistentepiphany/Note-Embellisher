@@ -79,17 +79,31 @@ class DropboxService:
                 print("⚠️  Image upload feature will be disabled. Text notes will still work.")
                 self.is_available = False
 
-    def _retry_with_refresh(self, func, *args, **kwargs):
+    def _retry_with_refresh(self, method_name: str, *args, **kwargs):
         """Retry a Dropbox API call with token refresh if needed"""
+        if not self.dbx:
+            raise HTTPException(status_code=503, detail="Dropbox client is not initialized")
+
+        method = getattr(self.dbx, method_name, None)
+        if not callable(method):
+            raise HTTPException(status_code=500, detail=f"Dropbox API method '{method_name}' is unavailable")
+
         try:
-            return func(*args, **kwargs)
+            return method(*args, **kwargs)
         except AuthError as e:
             print(f"⚠️  Dropbox auth error, attempting token refresh: {e}")
-            if self._refresh_access_token():
-                self.dbx = dropbox.Dropbox(self.access_token)
-                return func(*args, **kwargs)
-            else:
+            if not self._refresh_access_token():
                 raise HTTPException(status_code=503, detail="Failed to refresh Dropbox credentials")
+
+            # Recreate the client with the new token and retry the same method
+            self.dbx = dropbox.Dropbox(self.access_token)
+            method = getattr(self.dbx, method_name, None)
+            if not callable(method):
+                raise HTTPException(status_code=500, detail=f"Dropbox API method '{method_name}' is unavailable after refresh")
+            try:
+                return method(*args, **kwargs)
+            except AuthError as refresh_error:
+                raise HTTPException(status_code=503, detail="Dropbox authentication failed after refreshing credentials") from refresh_error
 
     def upload_image(self, file_content: bytes, filename: str, user_id: str) -> Tuple[str, str]:
         """
@@ -119,10 +133,10 @@ class DropboxService:
             dropbox_path = f"/{user_id}/{unique_filename}"
             
             # Upload file with retry on auth failure
-            self._retry_with_refresh(self.dbx.files_upload, file_content, dropbox_path, mode=WriteMode('add'))
+            self._retry_with_refresh("files_upload", file_content, dropbox_path, mode=WriteMode('add'))
             
             # Create a shareable link with retry on auth failure
-            sharing_settings = self._retry_with_refresh(self.dbx.sharing_create_shared_link_with_settings, dropbox_path)
+            sharing_settings = self._retry_with_refresh("sharing_create_shared_link_with_settings", dropbox_path)
             
             # Modify URL for direct access
             shareable_url = sharing_settings.url.replace("?dl=0", "?raw=1")
@@ -150,7 +164,7 @@ class DropboxService:
             )
             
         try:
-            _, res = self._retry_with_refresh(self.dbx.files_download, path=dropbox_path)
+            _, res = self._retry_with_refresh("files_download", path=dropbox_path)
             return res.content
             
         except ApiError as e:
@@ -172,7 +186,7 @@ class DropboxService:
             return False
             
         try:
-            self._retry_with_refresh(self.dbx.files_delete_v2, dropbox_path)
+            self._retry_with_refresh("files_delete_v2", dropbox_path)
             return True
         except ApiError as e:
             print(f"Error deleting from Dropbox: {e}")

@@ -35,6 +35,9 @@ class NoteResponse(BaseModel):
     image_filename: Optional[str] = None
     image_type: Optional[str] = None
     input_type: str = "text"
+    pdf_url: Optional[str] = None
+    docx_url: Optional[str] = None
+    txt_url: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
