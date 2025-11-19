@@ -2,7 +2,7 @@ import { getAuth } from "firebase/auth";
 
 // Use environment variable or default to localhost for development
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
-export const API_BASE_URL = env.VITE_API_BASE_URL || 'http://localhost:8080';
+export const API_BASE_URL = env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // ----- firebase-fix: Add authentication header helper -----
 const getAuthHeaders = async () => {
@@ -260,37 +260,57 @@ export const uploadMultipleImages = async (
   }
 };
 
+export interface PollOptions {
+  /** Maximum amount of time (ms) to wait before timing out. Default: 7 minutes */
+  timeoutMs?: number;
+  /** Polling interval in milliseconds. Default: 1.25 seconds */
+  intervalMs?: number;
+  /** Optional callback fired right before timing out */
+  onTimeout?: () => void;
+}
+
 export const pollNoteStatus = async (
-  noteId: number, 
+  noteId: number,
   onUpdate: (note: NoteResponse) => void,
-  maxAttempts: number = 60 // Increased for longer processing times
+  options: PollOptions = {}
 ): Promise<NoteResponse> => {
-  let attempts = 0;
-  
+  const {
+    timeoutMs = 7 * 60 * 1000,
+    intervalMs = 1250,
+    onTimeout,
+  } = options;
+
+  const startTime = Date.now();
+
   return new Promise((resolve, reject) => {
     const poll = async () => {
       try {
         const note = await getNoteById(noteId);
         onUpdate(note);
-        
+
         if (note.status === 'completed' || note.status === 'error') {
           resolve(note);
           return;
         }
-        
-        attempts++;
-        if (attempts >= maxAttempts) {
+
+        const elapsed = Date.now() - startTime;
+        if (elapsed >= timeoutMs) {
+          onTimeout?.();
           reject(new Error('Polling timeout - processing took too long'));
           return;
         }
-        
-        // Poll every 1 second for better progress updates
-        setTimeout(poll, 1000);
+
+        const elapsedMinutes = Math.max(1, Math.floor(elapsed / 60000));
+        const dynamicInterval = Math.min(
+          intervalMs + elapsedMinutes * 250,
+          5000
+        );
+        setTimeout(poll, dynamicInterval);
       } catch (error) {
         reject(error);
       }
     };
-    
+
     poll();
   });
 };

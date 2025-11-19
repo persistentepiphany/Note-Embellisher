@@ -78,18 +78,35 @@ export const NoteSubmission: React.FC = () => {
       return;
     }
 
-    try {
+  let patienceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
       setIsProcessing(true);
       setError(null);
       setStartTime(Date.now());
-      
-      // Estimate processing time based on content
+
+      // Estimate processing time based on content (more generous for large payloads)
+      let computedEstimateSeconds: number;
       if (uploadMode === 'image') {
-        setEstimatedTime(selectedFiles.length > 1 ? 45 : 30); // 30-45 seconds for images
+        const perImage = selectedFiles.length > 1 ? 70 : 55;
+        computedEstimateSeconds = Math.min(300, Math.max(60, perImage * Math.max(1, selectedFiles.length)));
       } else {
         const wordCount = notes.trim().split(/\s+/).length;
-        setEstimatedTime(Math.max(15, Math.min(60, Math.ceil(wordCount / 50)))); // 15-60 seconds based on length
+        computedEstimateSeconds = Math.min(240, Math.max(45, Math.ceil(wordCount / 35)));
       }
+      setEstimatedTime(computedEstimateSeconds);
+
+      const pollTimeoutMs = uploadMode === 'image'
+        ? Math.min(12 * 60 * 1000, (computedEstimateSeconds + selectedFiles.length * 90) * 1000)
+        : Math.min(10 * 60 * 1000, (computedEstimateSeconds + 180) * 1000);
+
+      patienceTimer = window.setTimeout(() => {
+        setProcessingStatus((prev) =>
+          prev && prev.toLowerCase().includes('still working')
+            ? prev
+            : 'Still working... large uploads may take a few minutes. Please keep this page open.'
+        );
+      }, Math.min(90_000, pollTimeoutMs * 0.3));
       
       let noteResponse: NoteResponse;
       
@@ -134,6 +151,13 @@ export const NoteSubmission: React.FC = () => {
                 : 'Processing with ChatGPT...');
             setProcessingStatus(message);
           }
+        },
+        {
+          timeoutMs: pollTimeoutMs,
+          intervalMs: uploadMode === 'image' ? 1500 : 1100,
+          onTimeout: () => {
+            setProcessingStatus('Processing timed out before completion. Please try again or split the upload into smaller batches.');
+          },
         }
       );
       
@@ -149,13 +173,25 @@ export const NoteSubmission: React.FC = () => {
         throw new Error('Processing failed on the server');
       }
       
+      if (patienceTimer) {
+        clearTimeout(patienceTimer);
+        patienceTimer = null;
+      }
     } catch (error) {
       console.error('Error processing note:', error);
       setError(error instanceof Error ? error.message : 'An error occurred while processing your content');
       setProcessingStatus('');
       setEstimatedTime(null);
       setStartTime(null);
+
+      if (patienceTimer) {
+        clearTimeout(patienceTimer);
+        patienceTimer = null;
+      }
     } finally {
+      if (patienceTimer) {
+        clearTimeout(patienceTimer);
+      }
       setIsProcessing(false);
     }
   };
