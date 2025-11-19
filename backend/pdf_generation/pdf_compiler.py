@@ -97,6 +97,8 @@ class PDFCompiler:
                     
                     if i == 1 and result.returncode != 0:  # Only check on final run
                         error_log = result.stdout + "\n" + result.stderr
+                        print(f"pdflatex compilation error (return code {result.returncode})")
+                        print(f"Last 500 chars of log: {error_log[-500:]}")
                         return None, None, f"pdflatex compilation failed: {error_log[-500:]}"
                 
                 pdf_temp_path = os.path.join(tmpdir, "document.pdf")
@@ -142,6 +144,7 @@ class PDFCompiler:
                 'return': 'pdf'
             }
 
+            print("Sending LaTeX to texlive.net cloud compiler...")
             response = requests.post(
                 'https://texlive.net/cgi-bin/latexcgi',
                 files=files,
@@ -150,6 +153,8 @@ class PDFCompiler:
             )
 
             content_type = response.headers.get('Content-Type', '').lower()
+            print(f"Cloud response: status={response.status_code}, content-type={content_type}, length={len(response.content)} bytes")
+            
             if response.status_code == 200 and content_type.startswith('application/pdf'):
                 pdf_output_path = self.output_dir / f"{output_filename}.pdf"
                 with open(pdf_output_path, 'wb') as f:
@@ -164,9 +169,20 @@ class PDFCompiler:
                 print(f"PDF compiled via cloud: {pdf_output_path}")
                 return str(pdf_output_path), str(tex_output_path) if save_tex else None, None
 
+            # Check if response is LaTeX compilation log (text/plain)
+            if content_type.startswith('text/plain') or content_type.startswith('text/html'):
+                error_preview = response.text[:1000] if response.text else ''
+                print(f"Cloud compiler returned log/error instead of PDF: {error_preview}")
+                # Look for actual LaTeX errors in the log
+                if "! " in error_preview:
+                    # Extract actual error
+                    error_lines = [line for line in error_preview.split('\n') if line.startswith('!')]
+                    actual_error = '\n'.join(error_lines[:5]) if error_lines else error_preview[:500]
+                    return None, None, f"LaTeX compilation error: {actual_error}"
+            
             error_preview = response.text[:500] if response.text else ''
             error_msg = (
-                f"Cloud compilation failed with status {response.status_code}: {error_preview}"
+                f"Cloud compilation failed - expected PDF but got {content_type}: {error_preview}"
             )
             return None, None, error_msg
 

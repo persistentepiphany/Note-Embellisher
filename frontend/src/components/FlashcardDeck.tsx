@@ -44,7 +44,8 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({
     <div
       className={`grid gap-4 ${
         compact ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-      }`}
+      } max-h-[600px] overflow-y-auto pr-2`}
+      style={{ scrollbarWidth: 'thin' }}
     >
       {sortedCards.map((card) => {
         const isFlipped = !!flipped[card.id];
@@ -65,37 +66,40 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({
                   transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
                 }}
               >
+                {/* FRONT SIDE - Show TERM (not definition) */}
                 <div
-                  className="absolute inset-0 p-4 flex flex-col justify-between"
-                  style={{ backfaceVisibility: 'hidden' as const }}
+                  className="absolute inset-0 p-4 flex flex-col justify-between overflow-y-auto"
+                  style={{ backfaceVisibility: 'hidden' as const, scrollbarWidth: 'thin' }}
                 >
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-orange-500 font-semibold">
-                      Definition
+                  <div className="overflow-y-auto flex-1">
+                    <p className="text-xs uppercase tracking-wide text-orange-500 font-semibold mb-2">
+                      Term
                     </p>
-                    <p className="text-sm text-gray-800 mt-2 line-clamp-6 leading-relaxed">
-                      {card.definition}
+                    <p className="text-lg font-semibold text-gray-800 leading-relaxed">
+                      {card.term}
                     </p>
                   </div>
-                  <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
+                  <div className="flex items-center justify-between text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">
                     <span>{card.topic}</span>
                     <span>{card.source === 'manual' ? 'Manual' : 'AI'}</span>
                   </div>
                 </div>
+                {/* BACK SIDE - Show DEFINITION */}
                 <div
-                  className="absolute inset-0 p-4 bg-orange-600 text-white flex flex-col justify-between"
+                  className="absolute inset-0 p-4 bg-orange-600 text-white flex flex-col justify-between overflow-y-auto"
                   style={{
                     backfaceVisibility: 'hidden' as const,
                     transform: 'rotateY(180deg)',
+                    scrollbarWidth: 'thin'
                   }}
                 >
-                  <div>
-                    <p className="text-xs uppercase tracking-wide opacity-80">
-                      Term
+                  <div className="overflow-y-auto flex-1">
+                    <p className="text-xs uppercase tracking-wide opacity-80 mb-2">
+                      Definition
                     </p>
-                    <p className="text-lg font-semibold mt-2">{card.term}</p>
+                    <p className="text-sm leading-relaxed">{card.definition}</p>
                   </div>
-                  <p className="text-sm text-orange-100">{card.topic}</p>
+                  <p className="text-sm text-orange-100 mt-2 pt-2 border-t border-orange-500">{card.topic}</p>
                 </div>
               </div>
             </div>
@@ -105,7 +109,7 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({
                   e.stopPropagation();
                   onDeleteCard(card.id);
                 }}
-                className="absolute top-2 right-2 text-xs text-red-500 bg-white/80 rounded-full px-2 py-0.5 shadow"
+                className="absolute top-2 right-2 text-xs text-red-500 bg-white/80 rounded-full px-2 py-0.5 shadow z-10"
               >
                 Remove
               </button>
