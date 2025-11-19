@@ -1,0 +1,187 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx, hyperref}
+\usepackage{fancyhdr}
+\usepackage[margin=1in]{geometry}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+
+\title{Note 41}
+\author{maximkazakov2005@gmail.com}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+In today's fast-paced digital landscape, developing a backend that is both efficient and secure is paramount, especially for applications in sectors like food and beverage. This document outlines a comprehensive approach to creating a coffee shop application using \textbf{FastAPI} and \textbf{Firebase}. Through this guide, you will learn not only how to set up your backend but also how to implement key features like menu management and user authorization effectively.
+
+Join us as we delve into the steps necessary to create a fully functional and secure backend for a coffee shop application. You'll see how to manage your drinks menu, implement user roles, and ensure a seamless experience for both your front-end developers and end-users.
+
+\section{Overview of FastAPI and Firebase}
+
+\subsection{FastAPI}
+\begin{itemize}
+    \item \textbf{High Performance}: Built on Starlette for the web parts and Pydantic for the data parts, FastAPI is designed for high performance and fast responses.
+    \item \textbf{Ease of Use}: It simplifies the development process with automatic generation of OpenAPI documentation.
+    \item \textbf{Type Hints}: Leverages Python type hints to provide better editor support and type validation.
+\end{itemize}
+
+\subsection{Firebase}
+\begin{itemize}
+    \item \textbf{Real-time Database}: Offers a NoSQL cloud database that allows for real-time data syncing.
+    \item \textbf{Authentication}: Provides robust user authentication systems with custom claims for role management.
+    \item \textbf{Hosting}: Easily deploy your applications on Firebase with built-in hosting solutions.
+\end{itemize}
+
+\section{Setting Up Your Coffee Shop Application}
+
+\subsection{Step 1: Seeding Your Database}
+
+To start populating your Firebase database with initial data, you need to run a seed script. This is crucial for setting up a foundational menu for your coffee shop application.
+
+\textbf{Run the Seed Script:}
+\begin{verbatim}
+python scripts/seed.py
+\end{verbatim}
+
+Upon running the script, you will be greeted with an engaging message signaling that you're ready to implement the killer feature.
+
+\subsection{Initial Menu Data}
+
+The following drinks are included in the initial seed data:
+
+\begin{verbatim}
+drinks = [
+    {"id": "latte", "name": "Classic Latte", "category": "espresso"},
+    {"id": "cappuccino", "name": "Cappuccino", "category": "espresso"},
+    {"id": "americano", "name": "Americano", "category": "espresso"},
+    {"id": "mocha", "name": "Mocha", "category": "espresso"},
+    {"id": "espresso", "name": "Espresso", "category": "espresso"},
+    {"id": "cold_brew", "name": "Cold Brew", "category": "brew"},
+    {"id": "flat_white", "name": "Flat White", "category": "espresso"},
+    {"id": "macchiato", "name": "Macchiato", "category": "espresso"},
+    {"id": "irish_coffee", "name": "Irish Coffee", "category": "brew"},
+    {"id": "frappuccino", "name": "Frappuccino", "category": "blended"},
+]
+\end{verbatim}
+
+\subsection{Database Setup Script}
+
+This script populates the \texttt{drinks} collection in your Firebase database:
+\begin{verbatim}
+for drink in drinks:
+    db.collection("drinks").document(drink["id"]).set(drink)
+
+db.collection("config").document("loyalty").set({
+    "points_per_dollar": 10,
+    "rewards": {"Free Espresso": 200, "Free Any Drink": 500}
+})
+print("Seeded!")
+\end{verbatim}
+\textit{Note}: Ensure that the Firebase SDK is properly set up in your project environment.
+
+\section{Robust Authorization: Securing Your Application}
+
+\subsection{Why Authorization Matters}
+
+Before you expand your application with additional endpoints, it is critical to establish a solid authorization mechanism. This ensures that sensitive operations are restricted to authorized users only, safeguarding your application against unauthorized access.
+
+\subsection{Steps to Implement Strong Authorization}
+
+\begin{enumerate}
+    \item \textbf{Fix \& Perfect the Auth Dependency}
+    \begin{verbatim}
+from fastapi import Depends, HTTPException, Header, status
+from firebase_admin import auth
+from typing import Dict, Optional
+
+async def get_current_user(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = authorization.split(" ")[1]
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    \end{verbatim}
+
+    \item \textbf{Set Yourself as Admin}
+    \begin{enumerate}
+        \item In the Firebase Console:
+        \begin{itemize}
+            \item Navigate to \textbf{Authentication} $\rightarrow$ \textbf{Users}.
+            \item Find your test user (the one you log in with).
+            \item Click the pencil icon $\rightarrow$ \textbf{Add custom claims}.
+            \item Add the following JSON:
+\begin{verbatim}
+{
+  "admin": true
+}
+\end{verbatim}
+        \end{itemize}
+        \item This sets you as the only admin, allowing you to manage the application effectively.
+    \end{enumerate}
+
+    \item \textbf{Implement Dev-Only Endpoint for Admin Rights}
+    \begin{verbatim}
+@router.post("/dev/make-me-admin")
+async def make_me_admin(user = Depends(get_current_user)):
+    if settings.ENVIRONMENT != "development":
+        raise HTTPException(status_code=404)
+    
+    firebase_auth.set_custom_user_claims(user["uid"], {"admin": True})
+    return {"message": "You are now admin everywhere"}
+    \end{verbatim}
+
+    \item \textbf{Protect Every Endpoint}
+    \begin{itemize}
+        \item \textbf{Public Endpoint}:
+        \begin{verbatim}
+@router.get("/menu/drinks")  # Anyone can see the menu
+        \end{verbatim}
+        \item \textbf{User Endpoint}:
+        \begin{verbatim}
+@router.get("/me", dependencies=[Depends(get_current_user)])
+        \end{verbatim}
+        \item \textbf{Admin Endpoint}:
+        \begin{verbatim}
+@router.post("/admin/drinks", dependencies=[Depends(get_current_admin)])
+        \end{verbatim}
+    \end{itemize}
+
+    \item \textbf{Testing Authorization}:
+    \begin{itemize}
+        \item Run your backend and navigate to Swagger UI (\texttt{/docs}).
+        \item Click the \textbf{Authorize} button and test your endpoints:
+        \begin{itemize}
+            \item Ensure that accessing \texttt{/admin/secret} returns a 200 status for admins and a 403 for non-admin users.
+            \item Verify that unauthenticated requests receive a 401 status.
+        \end{itemize}
+    \end{itemize}
+\end{enumerate}
+
+\section{Conclusion}
+
+Congratulations on setting up a robust backend for your coffee shop application with FastAPI and Firebase! By following the steps outlined above, you have effectively seeded your database with essential drink information and implemented a strong authorization framework to secure your application.
+
+As you continue to expand your application, keep in mind the importance of maintaining secure coding practices and regular testing to ensure your backend remains a solid foundation for your coffee shop’s digital presence.
+
+\textit{You are now just a few steps away from having a fully functional coffee shop backend that is both robust and secure. Keep building, and may your coffee shop application thrive!} \(\cup\)
+
+\end{document}

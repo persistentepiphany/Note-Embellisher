@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -32,6 +33,8 @@ class ChatGPTService:
     def __init__(self):
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.client = None
+        self.chunk_char_limit = int(os.getenv("OPENAI_CHUNK_CHAR_LIMIT", "3800"))
+        self.max_parallel_requests = max(1, int(os.getenv("OPENAI_PARALLEL_REQUESTS", "3")))
         
         if not self.api_key:
             print("⚠️ Warning: OPENAI_API_KEY not found in environment variables")
@@ -235,6 +238,92 @@ Please provide the enhanced, spell-checked, and beautifully formatted version of
         
         return base_prompt
     
+    def _split_text_into_chunks(self, text: str, max_chars: Optional[int] = None) -> List[str]:
+        """Split long text into balanced chunks that fit within model limits."""
+        limit = max_chars or self.chunk_char_limit
+        if len(text) <= limit:
+            return [text]
+
+        paragraphs = text.split("\n\n")
+        chunks: List[str] = []
+        current_chunk: List[str] = []
+        current_length = 0
+
+        for para in paragraphs:
+            para_with_break = para + "\n\n"
+            para_length = len(para_with_break)
+            if current_length + para_length > limit and current_chunk:
+                chunks.append("".join(current_chunk).strip())
+                current_chunk = [para_with_break]
+                current_length = para_length
+            else:
+                current_chunk.append(para_with_break)
+                current_length += para_length
+
+        if current_chunk:
+            chunks.append("".join(current_chunk).strip())
+
+        return [chunk for chunk in chunks if chunk]
+
+    async def _process_chunk_async(
+        self,
+        chunk_text: str,
+        settings: ProcessingSettings,
+        chunk_index: int,
+        total_chunks: int,
+        semaphore: Optional[asyncio.Semaphore] = None
+    ) -> str:
+        """Send a single chunk to OpenAI without blocking the event loop."""
+        async def _run() -> str:
+            return await asyncio.to_thread(
+                self._call_openai_for_chunk,
+                chunk_text,
+                settings,
+                chunk_index,
+                total_chunks
+            )
+
+        if semaphore:
+            async with semaphore:
+                return await _run()
+        return await _run()
+
+    def _call_openai_for_chunk(
+        self,
+        chunk_text: str,
+        settings: ProcessingSettings,
+        chunk_index: int,
+        total_chunks: int
+    ) -> str:
+        prompt = self._generate_prompt(
+            chunk_text,
+            settings,
+            chunk_index=chunk_index,
+            total_chunks=total_chunks
+        )
+
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an expert content formatter, editor, and writer with exceptional skills in document design and presentation. Your specialty is transforming basic text into beautifully formatted, comprehensive, and engaging documents that are both visually appealing and highly informative."""
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=4000,
+            temperature=0.8
+        )
+
+        return response.choices[0].message.content
+
+    def _merge_chunk_responses(self, chunk_responses: List[str]) -> str:
+        cleaned = [chunk.strip() for chunk in chunk_responses if chunk and chunk.strip()]
+        return "\n\n".join(cleaned)
+    
     async def process_text_with_chatgpt(self, text: str, settings: ProcessingSettings) -> str:
         """
         Process text using ChatGPT API based on provided settings
@@ -244,38 +333,38 @@ Please provide the enhanced, spell-checked, and beautifully formatted version of
             return self._create_fallback_enhanced_text(text, settings)
         
         try:
-            prompt = self._generate_prompt(text, settings)
-            
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",  # Using GPT-4 for better formatting and comprehension
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """You are an expert content formatter, editor, and writer with exceptional skills in document design and presentation. Your specialty is transforming basic text into beautifully formatted, comprehensive, and engaging documents that are both visually appealing and highly informative. You excel at:
+            cleaned_text = text.strip()
+            if not cleaned_text:
+                return ""
 
-- Creating elegant visual hierarchies with proper spacing and formatting
-- Expanding content with relevant details while maintaining accuracy
-- Using sophisticated formatting techniques including symbols, lines, and visual elements
-- Writing in a clear, professional, and engaging style
-- Organizing information logically with smooth transitions between sections"""
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=4000,  # Increased for longer, more comprehensive responses
-                temperature=0.8   # Slightly higher for more creative formatting
-            )
-            
-            return response.choices[0].message.content
+            chunks = self._split_text_into_chunks(cleaned_text)
+            total_chunks = len(chunks)
+
+            if total_chunks == 1:
+                return await self._process_chunk_async(chunks[0], settings, 1, 1)
+
+            print(f"Processing text in {total_chunks} parallel chunks (limit {self.max_parallel_requests})")
+            semaphore = asyncio.Semaphore(self.max_parallel_requests)
+            tasks = [
+                self._process_chunk_async(chunk, settings, idx + 1, total_chunks, semaphore)
+                for idx, chunk in enumerate(chunks)
+            ]
+
+            chunk_results = await asyncio.gather(*tasks)
+            return self._merge_chunk_responses(chunk_results)
         
         except Exception as e:
             print(f"❌ Error processing with ChatGPT: {str(e)}")
             print("🔄 Falling back to local enhancement")
             return self._create_fallback_enhanced_text(text, settings)
     
-    def _generate_prompt(self, text: str, settings: ProcessingSettings) -> str:
+    def _generate_prompt(
+        self,
+        text: str,
+        settings: ProcessingSettings,
+        chunk_index: Optional[int] = None,
+        total_chunks: Optional[int] = None
+    ) -> str:
         """
         Generate enhanced prompt for beautiful, comprehensive formatting
         """
@@ -327,7 +416,17 @@ Please provide the enhanced, spell-checked, and beautifully formatted version of
         # Combine all instructions
         all_instructions = base_instructions + formatting_instructions
         
-        prompt = f"""You are an expert content formatter and writer. Your task is to transform the provided text into a beautifully formatted, comprehensive, and engaging document.
+        chunk_context = ""
+        if total_chunks and total_chunks > 1:
+            chunk_context = f"""
+
+CHUNK CONTEXT:
+• This is section {chunk_index} of {total_chunks}.
+• Maintain continuity between sections and avoid repeating introductions.
+• Only include a final summary if this is the last section.
+• Use neutral transitions so the sections merge seamlessly."""
+
+        prompt = f"""You are an expert content formatter and writer. Your task is to transform the provided text into a beautifully formatted, comprehensive, and engaging document.{chunk_context}
 
 FORMATTING GUIDELINES:
 {chr(10).join(f"• {instruction}" for instruction in all_instructions)}
