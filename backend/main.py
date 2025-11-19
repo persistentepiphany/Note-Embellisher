@@ -11,6 +11,8 @@ import os
 import secrets
 from datetime import datetime, timezone
 from pydantic import BaseModel
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 print("=" * 50)
 print("STARTING NOTE EMBELLISHER API")
@@ -1217,9 +1219,45 @@ async def upload_note_to_drive(
         "drive_file": upload_result
     }
 
+# Thread pool for CPU-bound tasks
+executor = ThreadPoolExecutor(max_workers=4)
+
+def generate_pdf_sync_wrapper(note_id: int, current_user_email: Optional[str]) -> bool:
+    """
+    Synchronous wrapper for PDF generation (for thread pool)
+    """
+    from core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        db_note = db.query(Note).filter(Note.id == note_id).first()
+        if not db_note:
+            return False
+        
+        pdf_exports = ensure_note_exports(
+            db_note,
+            author_email=current_user_email,
+            force=True,
+            formats=["pdf"]
+        )
+        
+        if pdf_exports.get("pdf_path"):
+            db_note.pdf_path = absolute_export_path(pdf_exports["pdf_path"])
+        if pdf_exports.get("tex_path"):
+            db_note.tex_path = absolute_export_path(pdf_exports["tex_path"])
+        
+        db.commit()
+        return True
+        
+    except Exception as e:
+        print(f"PDF generation failed: {e}")
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
 async def process_note_background(note_id: int, settings):
     """
-    Background task to process note with ChatGPT
+    Background task to process note with ChatGPT - now with synchronous PDF generation
     """
     from core.database import SessionLocal
     db = SessionLocal()
@@ -1244,25 +1282,29 @@ async def process_note_background(note_id: int, settings):
         
         # Update the note with processed content
         db_note.processed_content = processed_content
+        db.commit()
+        db.refresh(db_note)
+        
         update_note_progress(db, db_note, 50, "Converting to LaTeX format...")
         
-        # Generate PDF immediately after processing
-        final_message = "Completed"
-        try:
-            update_note_progress(db, db_note, 70, "Compiling LaTeX PDF...")
-            pdf_exports = ensure_note_exports(db_note, formats=["pdf"], force=True)
-            
-            # Ensure PDF URL is set in the note
-            if pdf_exports.get("pdf_url"):
-                print(f"PDF generated successfully: {pdf_exports['pdf_url']}")
-            else:
-                print(f"Warning: PDF generated but no URL returned for note {note_id}")
-        except Exception as export_error:
-            print(f"Export generation failed for note {note_id}: {export_error}")
-            import traceback
-            traceback.print_exc()
+        # Generate PDF BEFORE marking as complete
+        update_note_progress(db, db_note, 70, "Compiling LaTeX PDF...")
+        
+        # Run PDF generation in thread pool (CPU-bound operation)
+        loop = asyncio.get_event_loop()
+        pdf_success = await loop.run_in_executor(
+            executor,
+            lambda: generate_pdf_sync_wrapper(db_note.id, None)
+        )
+        
+        if pdf_success:
+            # Refresh note to get updated PDF paths
+            db.refresh(db_note)
+            final_message = "Completed"
+        else:
             final_message = "Enhanced notes ready (PDF export unavailable)"
         
+        # NOW mark as complete with PDF already generated
         update_note_progress(db, db_note, 100, final_message, ProcessingStatus.COMPLETED)
         print(f"Successfully processed note {note_id}")
         
@@ -1298,7 +1340,13 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         if not OCR_AVAILABLE or ocr_service is None:
             extracted_text = "[OCR service is not available in this deployment. Please process text manually.]"
         else:
-            extracted_text = ocr_service.extract_text_from_image_url(dropbox_path)
+            # Run OCR in thread pool
+            loop = asyncio.get_event_loop()
+            extracted_text = await loop.run_in_executor(
+                executor,
+                ocr_service.extract_text_from_image_url,
+                dropbox_path
+            )
             
             if not extracted_text.strip():
                 raise Exception("No text could be extracted from the image")
@@ -1309,14 +1357,14 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         
         # Update note with extracted text
         db_note.text = extracted_text
+        db.commit()
+        
         update_note_progress(db, db_note, 45, "Enhancing extracted notes with GPT-4...")
         
         print(f"OCR completed for note {note_id}, extracted text length: {len(extracted_text)}")
         
         # Convert settings to ProcessingSettings object
         processing_settings = ensure_processing_settings(settings)
-        
-
         
         # Process with ChatGPT
         processed_content = await chatgpt_service.process_text_with_chatgpt(
@@ -1326,23 +1374,24 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         
         # Update the note with processed content
         db_note.processed_content = processed_content
+        db.commit()
+        db.refresh(db_note)
+        
         update_note_progress(db, db_note, 65, "Converting to LaTeX format...")
         
-        # Generate PDF immediately after processing
-        final_message = "Completed"
-        try:
-            update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")
-            pdf_exports = ensure_note_exports(db_note, formats=["pdf"], force=True)
-            
-            # Ensure PDF URL is set in the note
-            if pdf_exports.get("pdf_url"):
-                print(f"PDF generated successfully: {pdf_exports['pdf_url']}")
-            else:
-                print(f"Warning: PDF generated but no URL returned for note {note_id}")
-        except Exception as export_error:
-            print(f"Export generation failed for image note {note_id}: {export_error}")
-            import traceback
-            traceback.print_exc()
+        # Generate PDF BEFORE marking as complete
+        update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")
+        
+        loop = asyncio.get_event_loop()
+        pdf_success = await loop.run_in_executor(
+            executor,
+            lambda: generate_pdf_sync_wrapper(db_note.id, None)
+        )
+        
+        if pdf_success:
+            db.refresh(db_note)
+            final_message = "Completed"
+        else:
             final_message = "Enhanced notes ready (PDF export unavailable)"
             
         update_note_progress(db, db_note, 100, final_message, ProcessingStatus.COMPLETED)
@@ -1421,22 +1470,22 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         # For multi-image notes, we store the enhanced content directly
         db_note.text = f"Processed {len(image_urls)} images with GPT-4 Vision"
         db_note.processed_content = processed_content
+        db.commit()
+        db.refresh(db_note)
         
-        # Generate PDF immediately after processing
-        final_message = "Completed"
-        try:
-            update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")
-            pdf_exports = ensure_note_exports(db_note, formats=["pdf"], force=True)
-            
-            # Ensure PDF URL is set in the note
-            if pdf_exports.get("pdf_url"):
-                print(f"PDF generated successfully: {pdf_exports['pdf_url']}")
-            else:
-                print(f"Warning: PDF generated but no URL returned for note {note_id}")
-        except Exception as export_error:
-            print(f"Export generation failed for multi-image note {note_id}: {export_error}")
-            import traceback
-            traceback.print_exc()
+        # Generate PDF BEFORE marking as complete
+        update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")
+        
+        loop = asyncio.get_event_loop()
+        pdf_success = await loop.run_in_executor(
+            executor,
+            lambda: generate_pdf_sync_wrapper(db_note.id, None)
+        )
+        
+        if pdf_success:
+            db.refresh(db_note)
+            final_message = "Completed"
+        else:
             final_message = "Enhanced notes ready (PDF export unavailable)"
             
         update_note_progress(db, db_note, 100, final_message, ProcessingStatus.COMPLETED)

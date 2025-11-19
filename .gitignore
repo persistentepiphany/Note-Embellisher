@@ -92,3 +92,6 @@ deploy.sh
 *.backup
 *.bak
 *.old
+
+# Documentation files (internal)
+OPTIMIZATION_IMPLEMENTATION.md
