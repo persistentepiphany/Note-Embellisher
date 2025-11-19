@@ -715,8 +715,16 @@ REQUIREMENTS:
             cleaned = raw_response.strip()
             if cleaned.startswith("```"):
                 print("Removing markdown code fences")
-                cleaned = "\n".join(line for line in cleaned.splitlines() if not line.strip().startswith("```"))
-            print(f"Cleaned response: {cleaned}")
+                lines = cleaned.splitlines()
+                # Remove first line if it's a code fence (e.g., ```json or ```)
+                if lines and lines[0].strip().startswith("```"):
+                    lines = lines[1:]
+                # Remove last line if it's a closing code fence
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                cleaned = "\n".join(lines).strip()
+            
+            print(f"Cleaned response: {cleaned[:200]}")
             parsed = json.loads(cleaned)
             print(f"Parsed JSON: {parsed}")
             if isinstance(parsed, list):
