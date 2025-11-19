@@ -1,6 +1,6 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.sql import func
 import json
 from datetime import datetime
@@ -41,8 +41,15 @@ class Note(Base):
     tex_path = Column(String, nullable=True)
     docx_path = Column(String, nullable=True)
     txt_path = Column(String, nullable=True)
+    project_name = Column(String, nullable=True)
+    latex_title = Column(String, nullable=True)
+    include_nickname = Column(Boolean, default=False, server_default="0")
+    nickname = Column(String, nullable=True)
+    flashcards_json = Column(Text, nullable=True)
+    folder_id = Column(Integer, ForeignKey("folders.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    folder = relationship("Folder", back_populates="notes")
     
     @property
     def settings(self):
@@ -53,6 +60,30 @@ class Note(Base):
     def settings(self, value):
         """Store settings as JSON string"""
         self.settings_json = json.dumps(value)
+
+    @property
+    def flashcards(self):
+        if not self.flashcards_json:
+            return []
+        try:
+            return json.loads(self.flashcards_json)
+        except json.JSONDecodeError:
+            return []
+
+    @flashcards.setter
+    def flashcards(self, value):
+        self.flashcards_json = json.dumps(value or [])
+
+
+class Folder(Base):
+    __tablename__ = "folders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    notes = relationship("Note", back_populates="folder")
 
 
 class GoogleDriveToken(Base):
@@ -83,7 +114,13 @@ def _ensure_note_columns():
             "docx_path": "TEXT",
             "txt_path": "TEXT",
             "progress": "INTEGER DEFAULT 0",
-            "progress_message": "TEXT"
+            "progress_message": "TEXT",
+            "project_name": "TEXT",
+            "latex_title": "TEXT",
+            "include_nickname": "BOOLEAN DEFAULT 0",
+            "nickname": "TEXT",
+            "flashcards_json": "TEXT",
+            "folder_id": "INTEGER"
         }
         missing = [name for name in required_columns if name not in columns]
         if not missing:

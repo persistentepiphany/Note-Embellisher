@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import uuid
 
 print("=" * 50)
 print("STARTING NOTE EMBELLISHER API")
@@ -31,14 +32,26 @@ except ImportError as e:
 
 # Optional imports - make everything optional for minimal deployment
 try:
-    from core.database import get_db, Note, GoogleDriveToken
+    from core.database import get_db, Note, GoogleDriveToken, Folder
     DATABASE_AVAILABLE = True
 except ImportError as e:
     print(f"Database not available: {e}")
     DATABASE_AVAILABLE = False
 
 try:
-    from core.schemas import NoteCreate, NoteResponse, NoteUpdate, ProcessingStatus, ProcessingSettingsSchema
+    from core.schemas import (
+        NoteCreate,
+        NoteResponse,
+        NoteUpdate,
+        ProcessingStatus,
+        ProcessingSettingsSchema,
+        FlashcardCreate,
+        FlashcardList,
+        FolderCreate,
+        FolderUpdate,
+        NoteMetadataUpdate,
+        FolderSchema
+    )
     SCHEMAS_AVAILABLE = True
 except ImportError as e:
     print(f"Schemas not available: {e}")
@@ -184,10 +197,14 @@ def _generate_pdf_assets(note: "Note", author: str, slug: str) -> Dict[str, Opti
         raise RuntimeError("PDF generation services unavailable")
 
     settings_schema = settings_to_schema(note.settings_json)
+    title_override = note.latex_title or note.project_name or f"Note {note.id}"
+    author_override = author
+    if note.include_nickname:
+        author_override = note.nickname or author or "Student"
     latex_content = latex_service.generate_latex_document(
         content=note.processed_content,
-        title=f"Note {note.id}",
-        author=author,
+        title=title_override,
+        author=author_override,
         style=settings_schema.latex_style,
         font=settings_schema.font_preference
     )
@@ -316,6 +333,85 @@ def settings_to_schema(settings_payload: Union[ProcessingSettings, ProcessingSet
         return ProcessingSettingsSchema(**settings_payload)
     raise ValueError("Unsupported settings payload")
 
+def apply_note_metadata_from_settings(note: "Note", settings: ProcessingSettings) -> None:
+    note.project_name = settings.project_name or note.project_name
+    note.latex_title = settings.latex_title or note.latex_title
+    note.include_nickname = bool(settings.include_nickname)
+    if settings.nickname:
+        note.nickname = settings.nickname
+
+def serialize_flashcards(note: "Note") -> List[Dict[str, Any]]:
+    flashcards: List[Dict[str, Any]] = []
+    for entry in note.flashcards:
+        flashcards.append({
+            "id": entry.get("id") or str(uuid.uuid4()),
+            "topic": entry.get("topic", ""),
+            "term": entry.get("term", ""),
+            "definition": entry.get("definition", ""),
+            "source": entry.get("source", "ai"),
+            "created_at": entry.get("created_at")
+        })
+    return flashcards
+
+async def maybe_generate_flashcards_for_note(
+    db: Session,
+    note: "Note",
+    text: Optional[str],
+    settings: ProcessingSettings
+) -> None:
+    if not text or not text.strip():
+        return
+    if not settings.generate_flashcards:
+        return
+    if not CHATGPT_AVAILABLE or chatgpt_service is None:
+        return
+
+    topics = settings.flashcard_topics or settings.focus_topics or []
+    topics = [topic.strip() for topic in topics if topic and topic.strip()]
+    if not topics:
+        return
+
+    desired_count = settings.flashcard_count or len(topics)
+    total_cards = max(len(topics), desired_count)
+    total_cards = min(total_cards, 50)
+    max_per_topic = min(max(1, settings.max_flashcards_per_topic or 4), 4)
+
+    try:
+        cards = await chatgpt_service.generate_flashcards(
+            text=text,
+            topics=topics,
+            total_cards=total_cards,
+            max_per_topic=max_per_topic
+        )
+    except Exception as e:
+        print(f"Flashcard generation failed for note {note.id}: {e}")
+        return
+
+    if not cards:
+        return
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    existing_manual = [
+        card for card in note.flashcards
+        if card.get("source") == "manual"
+    ]
+    ai_cards = [
+        {
+            "id": card.get("id") or str(uuid.uuid4()),
+            "topic": card.get("topic", ""),
+            "term": card.get("term", ""),
+            "definition": card.get("definition", ""),
+            "source": "ai",
+            "created_at": timestamp
+        }
+        for card in cards
+        if card.get("term") and card.get("definition")
+    ]
+
+    note.flashcards = existing_manual + ai_cards
+    db.commit()
+    db.refresh(note)
+
 def note_to_response(note: "Note", progress_override: Optional[int] = None, progress_message: Optional[str] = None) -> NoteResponse:
     settings_schema = settings_to_schema(note.settings_json)
     stored_progress = getattr(note, "progress", None)
@@ -326,6 +422,13 @@ def note_to_response(note: "Note", progress_override: Optional[int] = None, prog
     else:
         progress = 100 if note.status == ProcessingStatus.COMPLETED else 0
     stored_message = progress_message if progress_message is not None else getattr(note, "progress_message", None)
+    folder = None
+    if getattr(note, "folder", None):
+        folder = {
+            "id": note.folder.id,
+            "name": note.folder.name
+        }
+
     return NoteResponse(
         id=note.id,
         text=note.text,
@@ -341,9 +444,21 @@ def note_to_response(note: "Note", progress_override: Optional[int] = None, prog
         pdf_url=build_generated_file_url(note.pdf_path),
         docx_url=build_generated_file_url(note.docx_path),
         txt_url=build_generated_file_url(note.txt_path),
+        project_name=note.project_name,
+        latex_title=note.latex_title,
+        include_nickname=bool(note.include_nickname),
+        nickname=note.nickname,
+        flashcards=serialize_flashcards(note),
+        folder=folder,
         created_at=note.created_at,
         updated_at=note.updated_at
     )
+
+def _get_user_note(db: Session, note_id: int, user_id: str) -> "Note":
+    note = db.query(Note).filter(Note.id == note_id, Note.user_id == user_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return note
 
 def update_note_progress(db: Session, note: "Note", progress: int, message: Optional[str] = None, status: Optional[ProcessingStatus] = None) -> None:
     """Persist progress updates for long-running tasks so the UI can render truthful progress."""
@@ -598,7 +713,8 @@ async def create_note(
     Create a new note and start processing it in the background
     """
     # Create note in database
-    settings_dict = note.settings.model_dump()
+    processing_settings = ensure_processing_settings(note.settings)
+    settings_dict = ProcessingSettingsSchema(**processing_settings.__dict__).model_dump()
     db_note = Note(
         user_id=user["uid"],  # firebase-fix: Link note to user
         text=note.text,
@@ -607,12 +723,13 @@ async def create_note(
         progress=0,
         progress_message="Queued for processing"
     )
+    apply_note_metadata_from_settings(db_note, processing_settings)
     db.add(db_note)
     db.commit()
     db.refresh(db_note)
     
     # Add background task to process the note
-    background_tasks.add_task(process_note_background, db_note.id, note.settings)
+    background_tasks.add_task(process_note_background, db_note.id, processing_settings)
     
     # Return the created note
     return note_to_response(db_note, progress_override=0, progress_message="Queued for processing")
@@ -644,6 +761,83 @@ async def get_note(
     
     return note_to_response(db_note)
 
+@app.get("/notes/{note_id}/flashcards", response_model=FlashcardList)
+async def get_note_flashcards(
+    note_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    note = _get_user_note(db, note_id, user["uid"])
+    return FlashcardList(flashcards=serialize_flashcards(note))
+
+@app.post("/notes/{note_id}/flashcards", response_model=FlashcardList)
+async def add_manual_flashcard(
+    note_id: int,
+    flashcard: FlashcardCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    note = _get_user_note(db, note_id, user["uid"])
+    new_card = {
+        "id": str(uuid.uuid4()),
+        "topic": flashcard.topic.strip(),
+        "term": flashcard.term.strip(),
+        "definition": flashcard.definition.strip(),
+        "source": "manual",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    cards = [card for card in note.flashcards]
+    cards.append(new_card)
+    note.flashcards = cards
+    db.commit()
+    db.refresh(note)
+    return FlashcardList(flashcards=serialize_flashcards(note))
+
+@app.put("/notes/{note_id}/flashcards/{card_id}", response_model=FlashcardList)
+async def update_manual_flashcard(
+    note_id: int,
+    card_id: str,
+    flashcard: FlashcardCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    note = _get_user_note(db, note_id, user["uid"])
+    updated = False
+    cards = []
+    for card in note.flashcards:
+        if card.get("id") == card_id:
+            cards.append({
+                "id": card_id,
+                "topic": flashcard.topic.strip(),
+                "term": flashcard.term.strip(),
+                "definition": flashcard.definition.strip(),
+                "source": card.get("source", "manual"),
+                "created_at": card.get("created_at") or datetime.now(timezone.utc).isoformat()
+            })
+            updated = True
+        else:
+            cards.append(card)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Flashcard not found")
+    note.flashcards = cards
+    db.commit()
+    db.refresh(note)
+    return FlashcardList(flashcards=serialize_flashcards(note))
+
+@app.delete("/notes/{note_id}/flashcards/{card_id}", response_model=FlashcardList)
+async def delete_flashcard(
+    note_id: int,
+    card_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    note = _get_user_note(db, note_id, user["uid"])
+    cards = [card for card in note.flashcards if card.get("id") != card_id]
+    note.flashcards = cards
+    db.commit()
+    db.refresh(note)
+    return FlashcardList(flashcards=serialize_flashcards(note))
+
 @app.get("/notes/", response_model=List[NoteResponse])
 async def get_notes(
     skip: int = 0, 
@@ -673,6 +867,62 @@ async def get_notes(
     
     return [note_to_response(note) for note in notes]
 
+@app.get("/folders", response_model=List[FolderSchema])
+async def list_folders(
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    folders = db.query(Folder).filter(Folder.user_id == user["uid"]).order_by(Folder.created_at.desc()).all()
+    return folders
+
+@app.post("/folders", response_model=FolderSchema)
+async def create_folder(
+    folder: FolderCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    name = folder.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Folder name cannot be empty")
+    new_folder = Folder(user_id=user["uid"], name=name)
+    db.add(new_folder)
+    db.commit()
+    db.refresh(new_folder)
+    return new_folder
+
+@app.put("/folders/{folder_id}", response_model=FolderSchema)
+async def rename_folder(
+    folder_id: int,
+    folder: FolderUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    db_folder = db.query(Folder).filter(Folder.id == folder_id, Folder.user_id == user["uid"]).first()
+    if not db_folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    new_name = folder.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Folder name cannot be empty")
+    db_folder.name = new_name
+    db.commit()
+    db.refresh(db_folder)
+    return db_folder
+
+@app.delete("/folders/{folder_id}")
+async def delete_folder(
+    folder_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    db_folder = db.query(Folder).filter(Folder.id == folder_id, Folder.user_id == user["uid"]).first()
+    if not db_folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    # Detach notes from folder
+    db.query(Note).filter(Note.folder_id == folder_id, Note.user_id == user["uid"]).update({"folder_id": None})
+    db.delete(db_folder)
+    db.commit()
+    return {"success": True}
+
 @app.delete("/notes/{note_id}")
 async def delete_note(
     note_id: int, 
@@ -698,6 +948,41 @@ async def delete_note(
     db.commit()
     
     return {"message": "Note deleted successfully"}
+
+@app.patch("/notes/{note_id}/metadata", response_model=NoteResponse)
+async def update_note_metadata(
+    note_id: int,
+    metadata: NoteMetadataUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    note = _get_user_note(db, note_id, user["uid"])
+    payload = metadata.model_dump(exclude_unset=True)
+
+    if "project_name" in payload:
+        value = (payload["project_name"] or "").strip()
+        note.project_name = value or None
+    if "latex_title" in payload:
+        value = (payload["latex_title"] or "").strip()
+        note.latex_title = value or None
+    if "include_nickname" in payload:
+        note.include_nickname = bool(payload["include_nickname"])
+    if "nickname" in payload:
+        value = (payload["nickname"] or "").strip()
+        note.nickname = value or None
+    if "folder_id" in payload:
+        folder_id = payload["folder_id"]
+        if folder_id is None:
+            note.folder_id = None
+        else:
+            folder = db.query(Folder).filter(Folder.id == folder_id, Folder.user_id == user["uid"]).first()
+            if not folder:
+                raise HTTPException(status_code=404, detail="Folder not found")
+            note.folder_id = folder.id
+
+    db.commit()
+    db.refresh(note)
+    return note_to_response(note)
 
 @app.post("/upload-image/", response_model=NoteResponse)
 async def upload_image_note(
@@ -740,10 +1025,11 @@ async def upload_image_note(
         image_type = "pdf" if file_extension == "pdf" else "image"
         
         # Create note in database
+        normalized_settings = ProcessingSettingsSchema(**processing_settings.__dict__).model_dump()
         db_note = Note(
             user_id=user["uid"],
             text=None,  # Will be populated after OCR
-            settings_json=json.dumps(processing_settings.__dict__),
+            settings_json=json.dumps(normalized_settings),
             status=ProcessingStatus.PROCESSING,
             progress=0,
             progress_message="Uploading media...",
@@ -753,6 +1039,7 @@ async def upload_image_note(
             image_filename=file.filename,
             image_type=image_type
         )
+        apply_note_metadata_from_settings(db_note, processing_settings)
         db.add(db_note)
         db.commit()
         db.refresh(db_note)
@@ -847,10 +1134,11 @@ async def upload_multiple_images(
             filenames.append(file.filename)
         
         # Create note in database
+        normalized_settings = ProcessingSettingsSchema(**processing_settings.__dict__).model_dump()
         db_note = Note(
             user_id=user["uid"],
             text=None,  # Will be populated after GPT-4 Vision processing
-            settings_json=json.dumps(processing_settings.__dict__),
+            settings_json=json.dumps(normalized_settings),
             status=ProcessingStatus.PROCESSING,
             progress=0,
             progress_message="Uploading images...",
@@ -860,6 +1148,7 @@ async def upload_multiple_images(
             image_filename=", ".join(filenames),
             image_type="multiple_images"
         )
+        apply_note_metadata_from_settings(db_note, processing_settings)
         db.add(db_note)
         db.commit()
         db.refresh(db_note)
@@ -1284,6 +1573,13 @@ async def process_note_background(note_id: int, settings):
         db_note.processed_content = processed_content
         db.commit()
         db.refresh(db_note)
+
+        await maybe_generate_flashcards_for_note(
+            db,
+            db_note,
+            processed_content,
+            processing_settings
+        )
         
         update_note_progress(db, db_note, 50, "Converting to LaTeX format...")
         
@@ -1376,6 +1672,13 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         db_note.processed_content = processed_content
         db.commit()
         db.refresh(db_note)
+
+        await maybe_generate_flashcards_for_note(
+            db,
+            db_note,
+            processed_content,
+            processing_settings
+        )
         
         update_note_progress(db, db_note, 65, "Converting to LaTeX format...")
         
@@ -1472,6 +1775,13 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         db_note.processed_content = processed_content
         db.commit()
         db.refresh(db_note)
+
+        await maybe_generate_flashcards_for_note(
+            db,
+            db_note,
+            processed_content,
+            processing_settings
+        )
         
         # Generate PDF BEFORE marking as complete
         update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")

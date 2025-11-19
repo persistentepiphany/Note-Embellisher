@@ -24,6 +24,20 @@ const getAuthHeaders = async () => {
 };
 // ----------------------------------------------------
 
+export interface Flashcard {
+  id: string;
+  topic: string;
+  term: string;
+  definition: string;
+  source: 'ai' | 'manual';
+  created_at?: string | null;
+}
+
+export interface FolderSummary {
+  id: number;
+  name: string;
+}
+
 export interface ProcessingSettings {
   add_bullet_points: boolean;
   add_headers: boolean;
@@ -32,6 +46,15 @@ export interface ProcessingSettings {
   focus_topics?: string[];
   latex_style?: string;
   font_preference?: string;
+  custom_specifications?: string;
+  generate_flashcards?: boolean;
+  flashcard_topics?: string[];
+  flashcard_count?: number;
+  max_flashcards_per_topic?: number;
+  project_name?: string;
+  latex_title?: string;
+  include_nickname?: boolean;
+  nickname?: string;
 }
 
 export interface TopicSuggestion {
@@ -59,6 +82,12 @@ export interface NoteResponse {
   pdf_url?: string | null;
   docx_url?: string | null;
   txt_url?: string | null;
+  project_name?: string | null;
+  latex_title?: string | null;
+  include_nickname?: boolean;
+  nickname?: string | null;
+  flashcards?: Flashcard[];
+  folder?: FolderSummary | null;
   created_at: string;
   updated_at?: string | null;
 }
@@ -429,5 +458,146 @@ export const previewTopics = async (text: string): Promise<TopicSuggestion> => {
   } catch (error) {
     console.error('Error getting topic suggestions:', error);
     throw error;
+  }
+};
+
+interface FlashcardListResponse {
+  flashcards: Flashcard[];
+}
+
+export interface FlashcardPayload {
+  topic: string;
+  term: string;
+  definition: string;
+}
+
+export const fetchFlashcards = async (noteId: number): Promise<Flashcard[]> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/notes/${noteId}/flashcards`, {
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to load flashcards');
+  }
+  const data: FlashcardListResponse = await response.json();
+  return data.flashcards;
+};
+
+export const addFlashcard = async (noteId: number, payload: FlashcardPayload): Promise<Flashcard[]> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/notes/${noteId}/flashcards`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to add flashcard');
+  }
+  const data: FlashcardListResponse = await response.json();
+  return data.flashcards;
+};
+
+export const updateFlashcard = async (noteId: number, cardId: string, payload: FlashcardPayload): Promise<Flashcard[]> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/notes/${noteId}/flashcards/${cardId}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update flashcard');
+  }
+  const data: FlashcardListResponse = await response.json();
+  return data.flashcards;
+};
+
+export const deleteFlashcard = async (noteId: number, cardId: string): Promise<Flashcard[]> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/notes/${noteId}/flashcards/${cardId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete flashcard');
+  }
+  const data: FlashcardListResponse = await response.json();
+  return data.flashcards;
+};
+
+export interface NoteMetadataPayload {
+  project_name?: string | null;
+  latex_title?: string | null;
+  include_nickname?: boolean;
+  nickname?: string | null;
+  folder_id?: number | null;
+}
+
+export const updateNoteMetadata = async (noteId: number, payload: NoteMetadataPayload): Promise<NoteResponse> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/notes/${noteId}/metadata`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to update project settings');
+  }
+  return await response.json();
+};
+
+export const fetchFolders = async (): Promise<FolderSummary[]> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/folders`, {
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch folders');
+  }
+  return await response.json();
+};
+
+export const createFolder = async (name: string): Promise<FolderSummary> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/folders`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to create folder');
+  }
+  return await response.json();
+};
+
+export const renameFolder = async (folderId: number, name: string): Promise<FolderSummary> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/folders/${folderId}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to rename folder');
+  }
+  return await response.json();
+};
+
+export const deleteFolder = async (folderId: number): Promise<void> => {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/folders/${folderId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete folder');
   }
 };

@@ -17,6 +17,16 @@ import {
   getGoogleDriveStatus,
   getGoogleDriveAuthUrl,
   API_BASE_URL,
+  addFlashcard,
+  deleteFlashcard,
+  updateNoteMetadata,
+  fetchFolders,
+  createFolder,
+  renameFolder,
+  deleteFolder,
+  FolderSummary,
+  FlashcardPayload,
+  NoteMetadataPayload,
 } from "../services/apiService";
 import { NoteCard } from "./NoteCard";
 import {
@@ -42,6 +52,9 @@ export function Dashboard() {
   const [driveConnected, setDriveConnected] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [connectingDrive, setConnectingDrive] = useState(false);
+  const [folders, setFolders] = useState<FolderSummary[]>([]);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [folderStatus, setFolderStatus] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     try {
@@ -85,6 +98,15 @@ export function Dashboard() {
     }
   };
 
+  const loadFolders = async () => {
+    try {
+      const data = await fetchFolders();
+      setFolders(data);
+    } catch (err) {
+      console.warn('Unable to load folders:', err);
+    }
+  };
+
   const checkDriveStatus = async () => {
     try {
       const status = await getGoogleDriveStatus();
@@ -97,6 +119,7 @@ export function Dashboard() {
   useEffect(() => {
     fetchNotes();
     checkDriveStatus();
+    loadFolders();
   }, []);
 
   const updateNote = (noteId: number, updates: Partial<NoteResponse>) => {
@@ -260,6 +283,45 @@ export function Dashboard() {
     }
   };
 
+  const handleCreateFolder = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!newFolderName.trim()) return;
+    try {
+      setFolderStatus('Creating folder...');
+      const folder = await createFolder(newFolderName.trim());
+      setFolders((prev) => [folder, ...prev]);
+      setNewFolderName('');
+      setFolderStatus('Folder created');
+      setTimeout(() => setFolderStatus(null), 2000);
+    } catch (err) {
+      setFolderStatus(err instanceof Error ? err.message : 'Failed to create folder');
+    }
+  };
+
+  const handleRenameFolder = async (folder: FolderSummary) => {
+    const newName = window.prompt('Rename folder', folder.name);
+    if (!newName || newName.trim() === folder.name) return;
+    try {
+      const updated = await renameFolder(folder.id, newName.trim());
+      setFolders((prev) => prev.map((f) => (f.id === folder.id ? updated : f)));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to rename folder');
+    }
+  };
+
+  const handleDeleteFolder = async (folderId: number) => {
+    if (!window.confirm('Delete this folder? Projects inside will remain available.')) {
+      return;
+    }
+    try {
+      await deleteFolder(folderId);
+      setFolders((prev) => prev.filter((folder) => folder.id !== folderId));
+      fetchNotes();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete folder');
+    }
+  };
+
   const handleConnectDrive = async () => {
     setError(null);
     setStatusMessage(null);
@@ -275,6 +337,47 @@ export function Dashboard() {
     }
   };
 
+  const handleMetadataUpdate = async (noteId: number, payload: NoteMetadataPayload) => {
+    try {
+      await runAction(noteId, 'metadata', async () => {
+        const updated = await updateNoteMetadata(noteId, payload);
+        setNotes((prev) => prev.map((note) => (note.id === noteId ? updated : note)));
+      });
+    } catch {
+      // error surfaced via runAction
+    }
+  };
+
+  const handleFlashcardAdd = async (noteId: number, payload: FlashcardPayload) => {
+    try {
+      await runAction(noteId, 'flashcards', async () => {
+        const cards = await addFlashcard(noteId, payload);
+        setNotes((prev) =>
+          prev.map((note) =>
+            note.id === noteId ? { ...note, flashcards: cards } : note
+          )
+        );
+      });
+    } catch {
+      // handled in runAction
+    }
+  };
+
+  const handleFlashcardDelete = async (noteId: number, cardId: string) => {
+    try {
+      await runAction(noteId, 'flashcards', async () => {
+        const cards = await deleteFlashcard(noteId, cardId);
+        setNotes((prev) =>
+          prev.map((note) =>
+            note.id === noteId ? { ...note, flashcards: cards } : note
+          )
+        );
+      });
+    } catch {
+      // handled
+    }
+  };
+
   const renderNoteCard = (note: NoteResponse) => (
     <NoteCard
       key={note.id}
@@ -285,11 +388,17 @@ export function Dashboard() {
       onDownloadTxt={handleDownloadTxt}
       onUploadToDrive={handleDriveUpload}
       onDelete={handleDeleteNote}
+      onUpdateMetadata={handleMetadataUpdate}
+      onAddFlashcard={handleFlashcardAdd}
+      onDeleteFlashcard={handleFlashcardDelete}
+      folders={folders}
       actionStates={{
         pdf: isActionPending(note.id, 'pdf'),
         docx: isActionPending(note.id, 'docx'),
         txt: isActionPending(note.id, 'txt'),
         drive: isActionPending(note.id, 'drive'),
+        metadata: isActionPending(note.id, 'metadata'),
+        flashcards: isActionPending(note.id, 'flashcards'),
       }}
     />
   );
@@ -346,6 +455,61 @@ export function Dashboard() {
               <Plus className="w-4 h-4 mr-2" />
               Create New
             </Button>
+          </div>
+        </div>
+
+        {/* Folder Management */}
+        <div className="bg-white border border-gray-100 rounded-xl p-4 mb-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Folders</h2>
+              <p className="text-sm text-gray-500">
+                Organize projects by subject. Move notes into folders from each card.
+              </p>
+            </div>
+            <form onSubmit={handleCreateFolder} className="flex gap-2 w-full sm:w-auto">
+              <Input
+                placeholder="Folder name"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+              />
+              <Button type="submit" disabled={!newFolderName.trim()}>
+                Create
+              </Button>
+            </form>
+          </div>
+          {folderStatus && (
+            <p className="text-xs text-amber-600 mt-2">{folderStatus}</p>
+          )}
+          <div className="flex flex-wrap gap-2 mt-4">
+            {folders.length === 0 ? (
+              <span className="text-sm text-gray-500">
+                No folders yet. Create one to get started.
+              </span>
+            ) : (
+              folders.map((folder) => (
+                <div
+                  key={folder.id}
+                  className="px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-full text-sm flex items-center gap-2"
+                >
+                  <span>{folder.name}</span>
+                  <button
+                    type="button"
+                    className="text-xs text-amber-700"
+                    onClick={() => handleRenameFolder(folder)}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-red-500"
+                    onClick={() => handleDeleteFolder(folder.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

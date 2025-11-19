@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+from collections import defaultdict
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -19,7 +20,16 @@ class ProcessingSettings:
         summarize: bool = False,
         focus_topics: Optional[List[str]] = None,
         latex_style: str = "academic",
-        font_preference: str = "Times New Roman"
+        font_preference: str = "Times New Roman",
+        custom_specifications: Optional[str] = "",
+        generate_flashcards: bool = False,
+        flashcard_topics: Optional[List[str]] = None,
+        flashcard_count: int = 0,
+        max_flashcards_per_topic: int = 4,
+        project_name: Optional[str] = None,
+        latex_title: Optional[str] = None,
+        include_nickname: bool = False,
+        nickname: Optional[str] = None
     ):
         self.add_bullet_points = add_bullet_points
         self.add_headers = add_headers
@@ -28,6 +38,15 @@ class ProcessingSettings:
         self.focus_topics = focus_topics or []
         self.latex_style = latex_style
         self.font_preference = font_preference
+        self.custom_specifications = (custom_specifications or "").strip()
+        self.generate_flashcards = generate_flashcards
+        self.flashcard_topics = flashcard_topics or []
+        self.flashcard_count = flashcard_count
+        self.max_flashcards_per_topic = max(1, max_flashcards_per_topic or 4)
+        self.project_name = project_name
+        self.latex_title = latex_title
+        self.include_nickname = include_nickname
+        self.nickname = nickname
 
 class ChatGPTService:
     def __init__(self):
@@ -274,14 +293,19 @@ Please provide the enhanced, spell-checked, and beautifully formatted version of
         semaphore: Optional[asyncio.Semaphore] = None
     ) -> str:
         """Send a single chunk to OpenAI without blocking the event loop."""
+        import concurrent.futures
+        
         async def _run() -> str:
-            return await asyncio.to_thread(
-                self._call_openai_for_chunk,
-                chunk_text,
-                settings,
-                chunk_index,
-                total_chunks
-            )
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return await loop.run_in_executor(
+                    pool,
+                    self._call_openai_for_chunk,
+                    chunk_text,
+                    settings,
+                    chunk_index,
+                    total_chunks
+                )
 
         if semaphore:
             async with semaphore:
@@ -413,6 +437,15 @@ Please provide the enhanced, spell-checked, and beautifully formatted version of
                 f"Prioritize covering the following focus topics in depth: {topics_text}"
             )
         
+        if settings.custom_specifications:
+            formatting_instructions.append(
+                "Custom instructions from the user (follow these only when they do not conflict with the selected enhancement options): "
+                f"{settings.custom_specifications}"
+            )
+            formatting_instructions.append(
+                "If any part of the custom instructions contradicts the selected enhancement options above, obey the selected options exactly and gracefully ignore the conflicting requests."
+            )
+        
         # Combine all instructions
         all_instructions = base_instructions + formatting_instructions
         
@@ -447,6 +480,126 @@ ORIGINAL TEXT:
 Please provide the enhanced, beautifully formatted version:"""
         
         return prompt
+
+    async def generate_flashcards(
+        self,
+        text: str,
+        topics: List[str],
+        total_cards: int,
+        max_per_topic: int = 4
+    ) -> List[Dict[str, str]]:
+        """Generate flashcards constrained to the provided notes."""
+        cleaned_text = (text or "").strip()
+        if not cleaned_text:
+            return []
+        if not self.client:
+            print("⚠️ OpenAI client unavailable, cannot generate flashcards")
+            return []
+
+        prepared_topics = [topic.strip() for topic in topics if topic and topic.strip()]
+        if not prepared_topics:
+            return []
+
+        max_cards = min(50, max(total_cards, len(prepared_topics)))
+        per_topic_limit = max(1, max_per_topic)
+
+        prompt = f"""
+You are an academic studying coach that prepares concise study flashcards strictly from provided notes.
+
+NOTES:
+{text}
+
+TOPICS TO COVER: {", ".join(prepared_topics)}
+
+REQUIREMENTS:
+- Use ONLY the information found in the notes above. Do not invent facts.
+- Provide at most {per_topic_limit} flashcards per topic and no more than {max_cards} flashcards total.
+- Definitions must be full sentences with proper punctuation and must not exceed 50 words.
+- Format the response as valid JSON: a list where each item contains "topic", "term", and "definition".
+- If the notes lack enough information for a topic, skip that topic gracefully.
+- The definition text should help a student recall the {per_topic_limit <= 2 and "term" or "term/concept"}.
+"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You create flashcards using only the supplied notes and respond in JSON."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.4,
+                max_tokens=1200
+            )
+            raw = response.choices[0].message.content.strip()
+            return self._parse_flashcard_response(raw, max_cards, per_topic_limit)
+        except Exception as e:
+            print(f"Flashcard generation failed: {e}")
+            return []
+
+    def _parse_flashcard_response(
+        self,
+        raw_response: str,
+        total_cards: int,
+        per_topic_limit: int
+    ) -> List[Dict[str, str]]:
+        try:
+            cleaned = raw_response.strip()
+            if cleaned.startswith("```"):
+                cleaned = "\n".join(
+                    line for line in cleaned.splitlines()
+                    if not line.strip().startswith("```")
+                )
+            parsed = json.loads(cleaned)
+        except Exception as e:
+            print(f"Failed to parse flashcard JSON: {e}")
+            return []
+
+        cards: List[Dict[str, str]] = []
+        topic_counts = defaultdict(int)
+
+        for entry in parsed if isinstance(parsed, list) else []:
+            topic = str(entry.get("topic", "")).strip()
+            term = str(entry.get("term", "")).strip()
+            definition = str(entry.get("definition", "")).strip()
+
+            if not topic or not term or not definition:
+                continue
+
+            if topic_counts[topic] >= per_topic_limit:
+                continue
+
+            limited_definition = self._limit_definition(definition)
+            if not limited_definition:
+                continue
+
+            cards.append({
+                "topic": topic,
+                "term": term,
+                "definition": limited_definition
+            })
+            topic_counts[topic] += 1
+
+            if len(cards) >= total_cards:
+                break
+
+        return cards
+
+    def _limit_definition(self, definition: str) -> str:
+        words = definition.split()
+        if not words:
+            return ""
+        if len(words) <= 50:
+            return " ".join(words)
+        trimmed = " ".join(words[:50]).rstrip(",;:")
+        if not trimmed.endswith((".", "?", "!")):
+            trimmed += "."
+        return trimmed
 
     async def extract_topics_from_text(self, text: str, max_topics: int = 6) -> List[str]:
         """Use OpenAI to extract the most important topics from raw text."""

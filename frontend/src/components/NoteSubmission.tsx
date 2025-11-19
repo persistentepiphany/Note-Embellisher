@@ -305,6 +305,7 @@ export const NoteSubmission: React.FC = () => {
               processedNotes={processedNotes}
               noteId={currentNote?.id}
               initialPdfUrl={currentNote?.pdf_url || undefined}
+              initialFlashcards={currentNote?.flashcards || []}
               onStartOver={handleStartOver}
             />
           )}

@@ -24,6 +24,7 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
   const [topicError, setTopicError] = useState<string | null>(null);
   const [customTopic, setCustomTopic] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [flashcardTopicInput, setFlashcardTopicInput] = useState('');
   const lastTopicSeedRef = useRef<string | null>(null);
 
   const handleConfigChange = (key: keyof ProcessingConfig, value: boolean | string | string[]) => {
@@ -34,6 +35,8 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
   };
 
   const hasProcessingOption = config.add_bullet_points || config.add_headers || config.expand || config.summarize;
+  const flashcardTopics = config.flashcard_topics || [];
+  const flashcardEnabled = !!config.generate_flashcards;
 
   const fetchTopicSuggestions = async (sourceText: string = noteText) => {
     if (!sourceText || sourceText.length < 50) {
@@ -102,6 +105,32 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
   const removeTopic = (topic: string) => {
     const currentTopics = config.focus_topics || [];
     handleConfigChange('focus_topics', currentTopics.filter(t => t !== topic));
+  };
+  
+  const addFlashcardTopic = () => {
+    const trimmed = flashcardTopicInput.trim();
+    if (!trimmed) return;
+    if (!flashcardTopics.includes(trimmed)) {
+      handleConfigChange('flashcard_topics', [...flashcardTopics, trimmed]);
+    }
+    setFlashcardTopicInput('');
+  };
+
+  const removeFlashcardTopic = (topic: string) => {
+    handleConfigChange('flashcard_topics', flashcardTopics.filter(t => t !== topic));
+  };
+
+  const copyTopicsToFlashcards = (topics: string[]) => {
+    const unique = Array.from(new Set([...flashcardTopics, ...topics]));
+    handleConfigChange('flashcard_topics', unique);
+    if ((config.flashcard_count || 0) < unique.length) {
+      handleConfigChange('flashcard_count', unique.length);
+    }
+  };
+
+  const handleFlashcardCountChange = (value: number) => {
+    const clamped = Math.max(flashcardTopics.length || 1, Math.min(50, value));
+    handleConfigChange('flashcard_count', clamped);
   };
 
   return (
@@ -225,8 +254,8 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
           )}
 
           {/* Custom Topic Input */}
-          {showCustomInput ? (
-            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+        {showCustomInput ? (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -264,6 +293,217 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
               </svg>
               Add custom topic
             </button>
+          )}
+        
+        {/* Custom Specifications */}
+        <div className="space-y-2 border-t border-dashed pt-4 mt-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+              </svg>
+              Custom Specifications
+            </h3>
+            <span className="text-xs text-gray-500">Conflicts yield to enhancement toggles automatically</span>
+          </div>
+          <textarea
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            rows={3}
+            placeholder="Example: Keep tone casual, include callout boxes for formulas, emphasize color-coded sections..."
+            value={config.custom_specifications || ''}
+            onChange={(e) => handleConfigChange('custom_specifications', e.target.value)}
+          />
+        </div>
+
+        {/* Project Metadata Section */}
+        <div className="space-y-4 border-t pt-6">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .672-3 1.5S10.343 11 12 11s3-.672 3-1.5S13.657 8 12 8zM5 21h14M8 21v-6m8 6v-6M3 9h18M6 3h12l3 6H3l3-6z" />
+            </svg>
+            Project Presentation
+          </h3>
+          <p className="text-sm text-gray-600">
+            Choose how this project appears in your dashboard and within the LaTeX export.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">Project Name</label>
+              <input
+                type="text"
+                className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                placeholder="e.g., Biology Unit 3 Review"
+                value={config.project_name || ''}
+                onChange={(e) => handleConfigChange('project_name', e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">LaTeX Title Override</label>
+              <input
+                type="text"
+                className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                placeholder="Appears at the top of the PDF"
+                value={config.latex_title || ''}
+                onChange={(e) => handleConfigChange('latex_title', e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 text-amber-600 rounded border-amber-300"
+                  checked={!!config.include_nickname}
+                  onChange={(e) => handleConfigChange('include_nickname', e.target.checked)}
+                />
+                Include my nickname as the author
+              </label>
+              <input
+                type="text"
+                className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-gray-100"
+                placeholder="Nickname to show in the PDF"
+                value={config.nickname || ''}
+                onChange={(e) => handleConfigChange('nickname', e.target.value)}
+                disabled={!config.include_nickname}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+        {/* Flashcard Generation Section */}
+        <div className="space-y-4 border-t pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Flashcard Generation
+              </h3>
+              <p className="text-sm text-gray-600">
+                AI builds up to 50 double-sided cards directly from your notes. You can add extra topics or cards manually later.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <span>{flashcardEnabled ? 'Enabled' : 'Disabled'}</span>
+              <input
+                type="checkbox"
+                className="h-5 w-5 text-emerald-600 rounded border-emerald-300 focus:ring-emerald-500"
+                checked={flashcardEnabled}
+                onChange={(e) => {
+                  handleConfigChange('generate_flashcards', e.target.checked);
+                  if (e.target.checked) {
+                    const preferred = Math.max(4, flashcardTopics.length || 1);
+                    if (!config.flashcard_count || config.flashcard_count < preferred) {
+                      handleConfigChange('flashcard_count', preferred);
+                    }
+                  }
+                }}
+              />
+            </label>
+          </div>
+
+          {!flashcardEnabled && (
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
+              Enable flashcards to have AI summarize each topic with concise definitions (≤ 50 words) pulled directly from your text.
+            </div>
+          )}
+
+          {flashcardEnabled && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => copyTopicsToFlashcards(config.focus_topics || [])}
+                  className="px-3 py-1.5 text-sm border border-emerald-300 text-emerald-700 rounded-lg hover:bg-emerald-50"
+                  disabled={!config.focus_topics || config.focus_topics.length === 0}
+                >
+                  Copy selected focus topics
+                </button>
+                <button
+                  type="button"
+                  onClick={() => copyTopicsToFlashcards(suggestedTopics)}
+                  className="px-3 py-1.5 text-sm border border-indigo-300 text-indigo-700 rounded-lg hover:bg-indigo-50 disabled:opacity-40"
+                  disabled={!suggestedTopics.length}
+                >
+                  Copy AI suggestions
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-gray-800">
+                  Flashcard Topics ({flashcardTopics.length})
+                </p>
+                {flashcardTopics.length === 0 && (
+                  <p className="text-sm text-gray-500">
+                    Add at least one topic or copy from the focus list so AI knows what to prioritize.
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {flashcardTopics.map((topic) => (
+                    <span
+                      key={topic}
+                      className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-medium border border-emerald-200"
+                    >
+                      {topic}
+                      <button onClick={() => removeFlashcardTopic(topic)} className="hover:text-emerald-900">
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    placeholder="Add a flashcard topic..."
+                    value={flashcardTopicInput}
+                    onChange={(e) => setFlashcardTopicInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addFlashcardTopic())}
+                  />
+                  <button
+                    type="button"
+                    onClick={addFlashcardTopic}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700">
+                    Total flashcards (min topics, max 50)
+                  </label>
+                  <input
+                    type="number"
+                    min={Math.max(1, flashcardTopics.length || 1)}
+                    max={50}
+                    value={config.flashcard_count || Math.max(flashcardTopics.length || 1, 4)}
+                    onChange={(e) => handleFlashcardCountChange(Number(e.target.value) || (flashcardTopics.length || 1))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700">
+                    Max flashcards per topic (up to 4)
+                  </label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={4}
+                    value={config.max_flashcards_per_topic || 4}
+                    onChange={(e) => handleConfigChange('max_flashcards_per_topic', Number(e.target.value))}
+                    className="w-full accent-emerald-600"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Currently {config.max_flashcards_per_topic || 4} per topic
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 

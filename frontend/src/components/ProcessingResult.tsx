@@ -2,13 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { exportToWord, downloadTextFile } from '../utils/exportUtils';
 import { FormattedContent } from './FormattedContent';
-import { generatePDF } from '../services/apiService';
+import {
+  generatePDF,
+  Flashcard,
+  fetchFlashcards,
+  addFlashcard,
+  deleteFlashcard,
+  FlashcardPayload,
+} from '../services/apiService';
+import { FlashcardDeck } from './FlashcardDeck';
 
 interface ProcessingResultProps {
   originalNotes: string;
   processedNotes: string;
   noteId?: number; // Optional note ID for PDF generation
   initialPdfUrl?: string | null;
+  initialFlashcards?: Flashcard[];
   onStartOver: () => void;
 }
 
@@ -17,6 +26,7 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
   processedNotes,
   noteId,
   initialPdfUrl,
+  initialFlashcards = [],
   onStartOver,
 }) => {
   const navigate = useNavigate();
@@ -25,6 +35,14 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>(initialFlashcards);
+  const [flashcardStatus, setFlashcardStatus] = useState<string | null>(null);
+  const [flashcardError, setFlashcardError] = useState<string | null>(null);
+  const [flashcardForm, setFlashcardForm] = useState<FlashcardPayload>({
+    topic: '',
+    term: '',
+    definition: '',
+  });
 
   const apiBaseUrl = useMemo(() => {
     const metaEnv = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
@@ -43,6 +61,10 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
       setPdfUrl(fullUrl);
     }
   }, [initialPdfUrl, apiBaseUrl]);
+
+  useEffect(() => {
+    setFlashcards(initialFlashcards);
+  }, [initialFlashcards]);
 
   useEffect(() => {
     if (!noteId || pdfUrl || initialPdfUrl) {
@@ -77,6 +99,33 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
       active = false;
     };
   }, [noteId, pdfUrl, initialPdfUrl, apiBaseUrl]);
+
+  useEffect(() => {
+    if (!noteId) return;
+    let active = true;
+    const loadFlashcards = async () => {
+      try {
+        setFlashcardStatus('Loading flashcards...');
+        setFlashcardError(null);
+        const items = await fetchFlashcards(noteId);
+        if (active) {
+          setFlashcards(items);
+        }
+      } catch (error) {
+        if (active) {
+          setFlashcardError(error instanceof Error ? error.message : 'Failed to load flashcards');
+        }
+      } finally {
+        if (active) {
+          setFlashcardStatus(null);
+        }
+      }
+    };
+    loadFlashcards();
+    return () => {
+      active = false;
+    };
+  }, [noteId]);
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -135,6 +184,43 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
       downloadTextFile(combinedContent, 'all_notes.txt');
     } catch (error) {
       alert(`Error downloading file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleFlashcardChange = (field: keyof FlashcardPayload, value: string) => {
+    setFlashcardForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddFlashcard = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!noteId) return;
+    if (!flashcardForm.topic || !flashcardForm.term || !flashcardForm.definition) {
+      setFlashcardError('Topic, term, and definition are required.');
+      return;
+    }
+    try {
+      setFlashcardError(null);
+      setFlashcardStatus('Saving flashcard...');
+      const updated = await addFlashcard(noteId, flashcardForm);
+      setFlashcards(updated);
+      setFlashcardForm({ topic: '', term: '', definition: '' });
+    } catch (error) {
+      setFlashcardError(error instanceof Error ? error.message : 'Failed to add flashcard');
+    } finally {
+      setFlashcardStatus(null);
+    }
+  };
+
+  const handleDeleteFlashcard = async (cardId: string) => {
+    if (!noteId) return;
+    try {
+      setFlashcardStatus('Removing flashcard...');
+      const updated = await deleteFlashcard(noteId, cardId);
+      setFlashcards(updated);
+    } catch (error) {
+      setFlashcardError(error instanceof Error ? error.message : 'Failed to remove flashcard');
+    } finally {
+      setFlashcardStatus(null);
     }
   };
 
@@ -217,6 +303,71 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
             )}
           </div>
         </div>
+      </div>
+
+      <div className="border-t border-green-200 pt-6 mt-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-semibold text-slate-900">Flashcards</h3>
+            <p className="text-sm text-slate-500">
+              Click on a card to flip between the definition and the term. Add manual cards below.
+            </p>
+          </div>
+          {flashcardStatus && (
+            <span className="text-xs text-amber-600">{flashcardStatus}</span>
+          )}
+        </div>
+
+        {flashcardError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+            {flashcardError}
+          </div>
+        )}
+
+        <FlashcardDeck
+          cards={flashcards}
+          onDeleteCard={handleDeleteFlashcard}
+        />
+
+        {noteId && (
+          <form
+            onSubmit={handleAddFlashcard}
+            className="grid grid-cols-1 gap-3 bg-white/70 border border-slate-200 rounded-lg p-4"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <input
+                type="text"
+                placeholder="Topic"
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={flashcardForm.topic}
+                onChange={(e) => handleFlashcardChange('topic', e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Term"
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={flashcardForm.term}
+                onChange={(e) => handleFlashcardChange('term', e.target.value)}
+              />
+              <textarea
+                placeholder="Definition (max ~50 words)"
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none sm:col-span-3"
+                value={flashcardForm.definition}
+                onChange={(e) => handleFlashcardChange('definition', e.target.value)}
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"
+                disabled={!flashcardForm.topic || !flashcardForm.term || !flashcardForm.definition}
+              >
+                Add Manual Flashcard
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Export Options */}
