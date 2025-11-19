@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ProcessingConfig } from '../types/config';
 import { previewTopics } from '../services/apiService';
 
@@ -24,6 +24,7 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
   const [topicError, setTopicError] = useState<string | null>(null);
   const [customTopic, setCustomTopic] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const lastTopicSeedRef = useRef<string | null>(null);
 
   const handleConfigChange = (key: keyof ProcessingConfig, value: boolean | string | string[]) => {
     onConfigChange({
@@ -34,15 +35,8 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
 
   const hasProcessingOption = config.add_bullet_points || config.add_headers || config.expand || config.summarize;
 
-  // Fetch topic suggestions when component mounts if text is available
-  useEffect(() => {
-    if (noteText && noteText.length > 50) {
-      fetchTopicSuggestions();
-    }
-  }, []);
-
-  const fetchTopicSuggestions = async () => {
-    if (!noteText || noteText.length < 50) {
+  const fetchTopicSuggestions = async (sourceText: string = noteText) => {
+    if (!sourceText || sourceText.length < 50) {
       setTopicError('Please enter at least 50 characters to get topic suggestions');
       return;
     }
@@ -51,8 +45,8 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
       setLoadingTopics(true);
       setTopicError(null);
       setSuggestedTopics([]); // Clear previous suggestions
-      console.log('Fetching topic suggestions for text length:', noteText.length);
-      const response = await previewTopics(noteText);
+      console.log('Fetching topic suggestions for text length:', sourceText.length);
+      const response = await previewTopics(sourceText);
       console.log('Received topic suggestions:', response);
       setSuggestedTopics(response.topics || []);
       if (!response.topics || response.topics.length === 0) {
@@ -66,6 +60,21 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
       setLoadingTopics(false);
     }
   };
+
+  // Auto-fetch topics whenever the note text changes and is long enough (debounced)
+  useEffect(() => {
+    if (!noteText || noteText.length < 50) {
+      return;
+    }
+    if (lastTopicSeedRef.current === noteText) {
+      return;
+    }
+    const handle = setTimeout(() => {
+      lastTopicSeedRef.current = noteText;
+      fetchTopicSuggestions(noteText);
+    }, 600);
+    return () => clearTimeout(handle);
+  }, [noteText]);
 
   const toggleTopic = (topic: string) => {
     const currentTopics = config.focus_topics || [];

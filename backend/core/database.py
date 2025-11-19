@@ -28,6 +28,8 @@ class Note(Base):
     settings_json = Column(Text, nullable=False)  # Store settings as JSON string
     processed_content = Column(Text, nullable=True)
     status = Column(String(20), default="pending")
+    progress = Column(Integer, default=0, server_default="0")
+    progress_message = Column(Text, nullable=True)
     # Image-related fields
     image_url = Column(String, nullable=True)  # Dropbox shareable URL
     image_path = Column(String, nullable=True)  # Dropbox file path for internal operations
@@ -79,7 +81,9 @@ def _ensure_note_columns():
             "pdf_path": "TEXT",
             "tex_path": "TEXT",
             "docx_path": "TEXT",
-            "txt_path": "TEXT"
+            "txt_path": "TEXT",
+            "progress": "INTEGER DEFAULT 0",
+            "progress_message": "TEXT"
         }
         missing = [name for name in required_columns if name not in columns]
         if not missing:

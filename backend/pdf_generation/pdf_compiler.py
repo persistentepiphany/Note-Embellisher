@@ -12,7 +12,8 @@ from pathlib import Path
 
 class PDFCompiler:
     def __init__(self):
-        self.output_dir = Path("generated_pdfs")
+        base_dir = Path(__file__).resolve().parent.parent  # backend/
+        self.output_dir = base_dir / "generated_pdfs"
         self.output_dir.mkdir(exist_ok=True)
         
         # Check if pdflatex is available

@@ -1,0 +1,107 @@
+# Maxim Kazakov  
+**Manchester, United Kingdom**  
+**Email:** maximkazakov2005@gmail.com  
+**LinkedIn:** [linkedin.com/in/maximkz](https://linkedin.com/in/maximkz)  
+**Portfolio:** [persistencyepiphany.dev](https://persistencyepiphany.dev)  
+**Date:** October 12, 2025  
+
+---
+
+## Epic Games  
+**London, United Kingdom**  
+**Date:** October 12, 2025  
+
+---
+
+### Dear Hiring Manager,
+
+I am excited to submit my application for the position of **Engine Programming Intern** at **Epic Games**. As a second-year student pursuing a degree in **Computer Science and Mathematics** at the **University of Manchester**, I am eager to bring my skills and experiences in game development and full-stack application development to your esteemed company.
+
+---
+
+### Why I Am Interested in This Position
+
+My application for the **Engine Programming Intern** position stems from a profound passion for game development and a strong desire to contribute to a leading organization such as Epic Games. I believe my background and skills align well with the requirements of this role. Here are several reasons why I am particularly drawn to this opportunity:
+
+1. **Alignment with Career Goals**  
+   - The internship represents an ideal step towards my aspiration of becoming a proficient game developer.
+   - Working alongside talented professionals in a creative environment will significantly enhance my skills and knowledge.
+
+2. **Passion for Game Development**  
+   - My enthusiasm for creating engaging and interactive experiences drives my pursuit of this career.
+   - I am motivated by the idea of influencing how players interact with games and the technology behind their creation.
+
+3. **Contribution to Epic Games**  
+   - I am inspired by Epic Games' commitment to innovation and excellence in the gaming industry.
+   - I believe that my unique perspective and technical skills can contribute meaningfully to projects that improve user experiences.
+
+---
+
+### Relevant Experience and Skills
+
+My experience with **game engines** and **web applications** has equipped me with a solid foundation for creating full-stack products that prioritize both user interface and responsive backend development. 
+
+#### Key Projects
+
+- **Note Embellisher**
+  - **Technologies Used:**  
+    • **Frontend:** ReactJS, TailwindCSS  
+    • **UI Design:** Figma  
+    • **Backend:** FastAPI, Firebase  
+  - **Description:**  
+    - Developed an application that simplifies the management and enhancement of class notes.
+    - Features include:  
+      • Uploading and organizing images of handwritten notes  
+      • Scanning and enhancing images of whiteboards and other educational materials using **OCR** technology  
+      • Integrating the **OpenAI API** to enhance document features  
+  - **Impact:**  
+    - This project reflects my commitment to developing tools that enhance productivity and streamline workflows, addressing common challenges faced by students.
+
+#### Technical Proficiencies
+
+- **Programming Languages:**  
+  • C  
+  • Python  
+  • Java  
+
+- **Game Development Tools:**  
+  • Unity3D  
+  • Unreal Engine  
+
+- **Web Development Tools:**  
+  • HTML, CSS, JavaScript  
+  • Node.js  
+
+---
+
+### Why I Believe I Am a Good Fit
+
+I am confident that my skills and experiences prepare me to contribute effectively to the responsibilities of this internship:
+
+- **Understanding User Needs:**  
+  My experience in developing user-centric applications ensures that I can design features that meet and exceed user expectations.
+
+- **Team Collaboration:**  
+  I thrive in collaborative environments and am eager to work with diverse teams to deliver extraordinary results.
+
+- **Adaptability and Learning:**  
+  My ongoing education and commitment to personal growth equip me to quickly adapt to new technologies and processes, which is essential in the fast-paced gaming industry.
+
+---
+
+### Conclusion
+
+I am thrilled about the opportunity to join **Epic Games** as an **Engine Programming Intern**. I am eager to collaborate with talented teams and contribute to projects that truly make a difference in the gaming landscape. Thank you for considering my application; I look forward to the possibility of discussing how my background, skills, and enthusiasms align with the goals of Epic Games.
+
+---
+
+**Sincerely,**  
+**Maxim Kazakov**  
+
+---  
+
+**[End of Document]**  
+
+---  
+
+This structured format not only enhances readability but also presents the content in a professional and engaging manner, allowing the key points to shine through effectively.

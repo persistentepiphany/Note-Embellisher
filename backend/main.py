@@ -316,10 +316,14 @@ def settings_to_schema(settings_payload: Union[ProcessingSettings, ProcessingSet
 
 def note_to_response(note: "Note", progress_override: Optional[int] = None, progress_message: Optional[str] = None) -> NoteResponse:
     settings_schema = settings_to_schema(note.settings_json)
+    stored_progress = getattr(note, "progress", None)
     if progress_override is not None:
         progress = progress_override
+    elif stored_progress is not None:
+        progress = stored_progress
     else:
         progress = 100 if note.status == ProcessingStatus.COMPLETED else 0
+    stored_message = progress_message if progress_message is not None else getattr(note, "progress_message", None)
     return NoteResponse(
         id=note.id,
         text=note.text,
@@ -327,7 +331,7 @@ def note_to_response(note: "Note", progress_override: Optional[int] = None, prog
         processed_content=note.processed_content,
         status=note.status,
         progress=progress,
-        progress_message=progress_message,
+        progress_message=stored_message,
         image_url=note.image_url,
         image_filename=note.image_filename,
         image_type=note.image_type,
@@ -338,6 +342,17 @@ def note_to_response(note: "Note", progress_override: Optional[int] = None, prog
         created_at=note.created_at,
         updated_at=note.updated_at
     )
+
+def update_note_progress(db: Session, note: "Note", progress: int, message: Optional[str] = None, status: Optional[ProcessingStatus] = None) -> None:
+    """Persist progress updates for long-running tasks so the UI can render truthful progress."""
+    capped_progress = max(0, min(100, progress))
+    note.progress = capped_progress
+    if message is not None:
+        note.progress_message = message
+    if status is not None:
+        note.status = status
+    db.commit()
+    db.refresh(note)
 
 
 class TopicsFromTextRequest(BaseModel):
@@ -586,7 +601,9 @@ async def create_note(
         user_id=user["uid"],  # firebase-fix: Link note to user
         text=note.text,
         settings_json=json.dumps(settings_dict),
-        status=ProcessingStatus.PROCESSING
+        status=ProcessingStatus.PROCESSING,
+        progress=0,
+        progress_message="Queued for processing"
     )
     db.add(db_note)
     db.commit()
@@ -608,7 +625,18 @@ async def get_note(
     Get a specific note by ID
     """
     # firebase-fix: Filter by user_id
-    db_note = db.query(Note).filter(Note.id == note_id, Note.user_id == user["uid"]).first()
+    try:
+        db_note = db.query(Note).filter(Note.id == note_id, Note.user_id == user["uid"]).first()
+    except Exception as e:
+        if "no such column" in str(e):
+            try:
+                from core.database import _ensure_note_columns
+                _ensure_note_columns()
+            except Exception:
+                pass
+            db_note = db.query(Note).filter(Note.id == note_id, Note.user_id == user["uid"]).first()
+        else:
+            raise
     if not db_note:
         raise HTTPException(status_code=404, detail="Note not found")
     
@@ -627,7 +655,18 @@ async def get_notes(
     # firebase-fix: Filter by user_id
     user_id = user["uid"]
     print(f"Fetching notes for user: {user_id}")
-    notes = db.query(Note).filter(Note.user_id == user_id).offset(skip).limit(limit).all()
+    try:
+        notes = db.query(Note).filter(Note.user_id == user_id).offset(skip).limit(limit).all()
+    except Exception as e:
+        if "no such column" in str(e):
+            try:
+                from core.database import _ensure_note_columns
+                _ensure_note_columns()
+            except Exception:
+                pass
+            notes = db.query(Note).filter(Note.user_id == user_id).offset(skip).limit(limit).all()
+        else:
+            raise
     print(f"Found {len(notes)} notes for user {user_id}")
     
     return [note_to_response(note) for note in notes]
@@ -704,6 +743,8 @@ async def upload_image_note(
             text=None,  # Will be populated after OCR
             settings_json=json.dumps(processing_settings.__dict__),
             status=ProcessingStatus.PROCESSING,
+            progress=0,
+            progress_message="Uploading media...",
             input_type="image",
             image_url=shareable_url,
             image_path=dropbox_path,  # Store Dropbox path
@@ -809,6 +850,8 @@ async def upload_multiple_images(
             text=None,  # Will be populated after GPT-4 Vision processing
             settings_json=json.dumps(processing_settings.__dict__),
             status=ProcessingStatus.PROCESSING,
+            progress=0,
+            progress_message="Uploading images...",
             input_type="images",  # Note the plural
             image_url=image_urls[0],  # Store first image URL
             image_path=json.dumps(image_paths),  # Store all paths as JSON
@@ -954,13 +997,18 @@ async def generate_pdf(
             detail="Note must be processed before generating PDF"
         )
     
+    pdf_result: Dict[str, Optional[str]] = {}
     try:
-        ensure_note_exports(
+        pdf_result = ensure_note_exports(
             db_note,
             author_email=current_user.get("email"),
             force=True,
             formats=["pdf"]
         )
+        if pdf_result.get("pdf_path"):
+            db_note.pdf_path = absolute_export_path(pdf_result["pdf_path"])
+        if pdf_result.get("tex_path"):
+            db_note.tex_path = absolute_export_path(pdf_result["tex_path"])
         db.commit()
     except Exception as e:
         db.rollback()
@@ -968,7 +1016,7 @@ async def generate_pdf(
         raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
 
     tex_content_preview = None
-    tex_path_abs = absolute_export_path(db_note.tex_path)
+    tex_path_abs = absolute_export_path(db_note.tex_path or pdf_result.get("tex_path"))
     if tex_path_abs and os.path.exists(tex_path_abs):
         try:
             with open(tex_path_abs, 'r', encoding='utf-8') as f:
@@ -985,9 +1033,9 @@ async def generate_pdf(
     return {
         "success": True,
         "note_id": note_id,
-        "pdf_path": db_note.pdf_path,
-        "tex_path": db_note.tex_path,
-        "pdf_url": build_generated_file_url(db_note.pdf_path),
+        "pdf_path": db_note.pdf_path or pdf_result.get("pdf_path"),
+        "tex_path": db_note.tex_path or pdf_result.get("tex_path"),
+        "pdf_url": pdf_result.get("pdf_url") or build_generated_file_url(db_note.pdf_path),
         "message": "PDF generated successfully",
         "tex_preview": tex_content_preview
     }
@@ -1185,8 +1233,10 @@ async def process_note_background(note_id: int, settings):
         
         # Convert settings to ProcessingSettings object
         processing_settings = ensure_processing_settings(settings)
+        update_note_progress(db, db_note, 5, "Starting note enhancement...")
         
         # Process with ChatGPT
+        update_note_progress(db, db_note, 25, "Enhancing content with ChatGPT...")
         processed_content = await chatgpt_service.process_text_with_chatgpt(
             db_note.text, 
             processing_settings
@@ -1194,12 +1244,26 @@ async def process_note_background(note_id: int, settings):
         
         # Update the note with processed content
         db_note.processed_content = processed_content
-        db_note.status = ProcessingStatus.COMPLETED
+        update_note_progress(db, db_note, 50, "Converting to LaTeX format...")
+        
+        # Generate PDF immediately after processing
+        final_message = "Completed"
         try:
-            ensure_note_exports(db_note)
+            update_note_progress(db, db_note, 70, "Compiling LaTeX PDF...")
+            pdf_exports = ensure_note_exports(db_note, formats=["pdf"], force=True)
+            
+            # Ensure PDF URL is set in the note
+            if pdf_exports.get("pdf_url"):
+                print(f"PDF generated successfully: {pdf_exports['pdf_url']}")
+            else:
+                print(f"Warning: PDF generated but no URL returned for note {note_id}")
         except Exception as export_error:
             print(f"Export generation failed for note {note_id}: {export_error}")
-        db.commit()
+            import traceback
+            traceback.print_exc()
+            final_message = "Enhanced notes ready (PDF export unavailable)"
+        
+        update_note_progress(db, db_note, 100, final_message, ProcessingStatus.COMPLETED)
         print(f"Successfully processed note {note_id}")
         
     except Exception as e:
@@ -1207,6 +1271,8 @@ async def process_note_background(note_id: int, settings):
         print(f"Error processing note {note_id}: {str(e)}")
         if db_note:
             db_note.status = ProcessingStatus.ERROR
+            db_note.progress_message = f"Processing failed: {e}"
+            db_note.progress = 0
             db.commit()
     finally:
         db.close()
@@ -1226,6 +1292,7 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
             return
         
         print(f"Starting OCR processing for note {note_id}")
+        update_note_progress(db, db_note, 10, "Running OCR on uploaded files...")
         
         # Extract text from image using OCR
         if not OCR_AVAILABLE or ocr_service is None:
@@ -1242,7 +1309,7 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         
         # Update note with extracted text
         db_note.text = extracted_text
-        db.commit()
+        update_note_progress(db, db_note, 45, "Enhancing extracted notes with GPT-4...")
         
         print(f"OCR completed for note {note_id}, extracted text length: {len(extracted_text)}")
         
@@ -1259,12 +1326,26 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         
         # Update the note with processed content
         db_note.processed_content = processed_content
-        db_note.status = ProcessingStatus.COMPLETED
+        update_note_progress(db, db_note, 65, "Converting to LaTeX format...")
+        
+        # Generate PDF immediately after processing
+        final_message = "Completed"
         try:
-            ensure_note_exports(db_note)
+            update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")
+            pdf_exports = ensure_note_exports(db_note, formats=["pdf"], force=True)
+            
+            # Ensure PDF URL is set in the note
+            if pdf_exports.get("pdf_url"):
+                print(f"PDF generated successfully: {pdf_exports['pdf_url']}")
+            else:
+                print(f"Warning: PDF generated but no URL returned for note {note_id}")
         except Exception as export_error:
             print(f"Export generation failed for image note {note_id}: {export_error}")
-        db.commit()
+            import traceback
+            traceback.print_exc()
+            final_message = "Enhanced notes ready (PDF export unavailable)"
+            
+        update_note_progress(db, db_note, 100, final_message, ProcessingStatus.COMPLETED)
         print(f"Successfully processed image note {note_id}")
         
     except Exception as e:
@@ -1273,6 +1354,8 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         print(f"Error processing image note {note_id}: {error_message}")
         if db_note:
             db_note.status = ProcessingStatus.ERROR
+            db_note.progress = 0
+            db_note.progress_message = f"Processing failed: {error_message}"
             # Store the error message in processed_content so frontend can display it
             db_note.processed_content = f"Processing failed: {error_message}"
             # Also ensure text field has content to prevent null issues
@@ -1305,6 +1388,7 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
             )
         
         print(f"Starting GPT-4 Vision processing for note {note_id} with {len(image_urls)} images")
+        update_note_progress(db, db_note, 10, "Preparing images for GPT-4 Vision...")
         
         # Check if ChatGPT service is available
         if not CHATGPT_AVAILABLE or chatgpt_service is None:
@@ -1312,6 +1396,7 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         
         # Convert settings to ProcessingSettings object
         processing_settings = ensure_processing_settings(settings)
+        update_note_progress(db, db_note, 35, "Analyzing handwriting with GPT-4 Vision...")
         
         # Get the actual Dropbox paths from the note
         # For single images, image_path is a string. For multiple, it's JSON array
@@ -1330,17 +1415,31 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         )
         
         print(f"GPT-4 Vision processing completed for note {note_id}")
+        update_note_progress(db, db_note, 60, "Converting to LaTeX format...")
         
         # Update the note with processed content
         # For multi-image notes, we store the enhanced content directly
         db_note.text = f"Processed {len(image_urls)} images with GPT-4 Vision"
         db_note.processed_content = processed_content
-        db_note.status = ProcessingStatus.COMPLETED
+        
+        # Generate PDF immediately after processing
+        final_message = "Completed"
         try:
-            ensure_note_exports(db_note)
+            update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")
+            pdf_exports = ensure_note_exports(db_note, formats=["pdf"], force=True)
+            
+            # Ensure PDF URL is set in the note
+            if pdf_exports.get("pdf_url"):
+                print(f"PDF generated successfully: {pdf_exports['pdf_url']}")
+            else:
+                print(f"Warning: PDF generated but no URL returned for note {note_id}")
         except Exception as export_error:
             print(f"Export generation failed for multi-image note {note_id}: {export_error}")
-        db.commit()
+            import traceback
+            traceback.print_exc()
+            final_message = "Enhanced notes ready (PDF export unavailable)"
+            
+        update_note_progress(db, db_note, 100, final_message, ProcessingStatus.COMPLETED)
         print(f"Successfully processed multiple images for note {note_id}")
         
     except Exception as e:
@@ -1352,6 +1451,8 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         
         if db_note:
             db_note.status = ProcessingStatus.ERROR
+            db_note.progress = 0
+            db_note.progress_message = f"Processing failed: {error_message}"
             db_note.processed_content = f"Processing failed: {error_message}"
             if not db_note.text:
                 db_note.text = "[Multiple image processing failed]"

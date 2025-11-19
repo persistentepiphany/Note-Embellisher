@@ -8,6 +8,7 @@ interface ProcessingResultProps {
   originalNotes: string;
   processedNotes: string;
   noteId?: number; // Optional note ID for PDF generation
+  initialPdfUrl?: string | null;
   onStartOver: () => void;
 }
 
@@ -15,6 +16,7 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
   originalNotes,
   processedNotes,
   noteId,
+  initialPdfUrl,
   onStartOver,
 }) => {
   const navigate = useNavigate();
@@ -36,7 +38,14 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!noteId || pdfUrl) {
+    if (initialPdfUrl) {
+      const fullUrl = initialPdfUrl.startsWith('http') ? initialPdfUrl : `${apiBaseUrl}${initialPdfUrl}`;
+      setPdfUrl(fullUrl);
+    }
+  }, [initialPdfUrl, apiBaseUrl]);
+
+  useEffect(() => {
+    if (!noteId || pdfUrl || initialPdfUrl) {
       return;
     }
 
@@ -67,7 +76,7 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
     return () => {
       active = false;
     };
-  }, [noteId, pdfUrl, apiBaseUrl]);
+  }, [noteId, pdfUrl, initialPdfUrl, apiBaseUrl]);
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -94,6 +103,7 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
       
       // Open the PDF in a new tab
       const pdfUrl = `${apiBaseUrl}${result.pdf_url}`;
+      setPdfUrl(pdfUrl);
       window.open(pdfUrl, '_blank');
       
       console.log('PDF generated successfully:', result);
@@ -161,36 +171,83 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
         </div>
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-medium text-green-800">Enhanced Notes</h3>
-            <button
-              onClick={() => copyToClipboard(processedNotes)}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 ${
-                copySuccess 
-                  ? 'bg-green-100 text-green-700' 
-                  : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-              }`}
-            >
-              {copySuccess ? '✓ Copied!' : 'Copy'}
-            </button>
+            <h3 className="text-lg font-medium text-green-800">Enhanced Notes PDF Preview</h3>
+            {pdfLoading && (
+              <span className="text-sm text-amber-600 flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+                Compiling...
+              </span>
+            )}
           </div>
           <div 
-            className={`p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg max-h-96 overflow-y-auto border border-green-200 transition-all duration-1000 ${
+            className={`bg-white rounded-lg border border-green-200 transition-all duration-1000 ${
               showContent 
                 ? 'opacity-100 blur-none transform translate-y-0' 
                 : 'opacity-0 blur-sm transform translate-y-2'
             }`}
           >
-            <FormattedContent 
-              content={processedNotes} 
-              className="text-green-800"
-            />
+            {pdfUrl ? (
+              <iframe
+                src={`${pdfUrl}#view=FitH`}
+                className="w-full h-96 rounded-lg"
+                title="LaTeX PDF Preview"
+              />
+            ) : pdfLoading ? (
+              <div className="p-6 text-center text-slate-500 text-sm h-96 flex flex-col items-center justify-center">
+                <div className="w-8 h-8 border-4 border-green-400 border-t-green-600 rounded-full animate-spin mb-3"></div>
+                <p className="font-medium">Compiling LaTeX and generating PDF preview...</p>
+                <p className="text-xs text-slate-400 mt-2">This may take 10-20 seconds</p>
+              </div>
+            ) : pdfError ? (
+              <div className="p-6 h-96 flex flex-col items-center justify-center">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 max-w-md">
+                  <p className="text-sm text-amber-800 mb-3">{pdfError}</p>
+                  <details className="text-xs text-amber-700">
+                    <summary className="cursor-pointer font-medium mb-2">View enhanced text instead</summary>
+                    <div className="mt-2 p-3 bg-white rounded border border-amber-100 max-h-48 overflow-y-auto">
+                      <FormattedContent content={processedNotes} className="text-slate-700" />
+                    </div>
+                  </details>
+                </div>
+              </div>
+            ) : (
+              <div className="p-6 text-center text-slate-500 text-sm h-96 flex items-center justify-center">
+                PDF preview will appear here once generated.
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Export Options */}
       <div className="space-y-4 mb-6">
-        <h4 className="text-lg font-medium text-slate-700">Export & Share Options</h4>
+        <div className="flex items-center justify-between">
+          <h4 className="text-lg font-medium text-slate-700">Export & Share Options</h4>
+          <button
+            onClick={() => copyToClipboard(processedNotes)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+              copySuccess 
+                ? 'bg-green-100 text-green-700 border border-green-300' 
+                : 'bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-300'
+            }`}
+          >
+            {copySuccess ? (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Copied!
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                </svg>
+                Copy Enhanced Text
+              </>
+            )}
+          </button>
+        </div>
         
         {/* PDF Error Display */}
         {pdfError && (
@@ -242,34 +299,6 @@ export const ProcessingResult: React.FC<ProcessingResultProps> = ({
             </svg>
             <span>Save to Drive</span>
           </button>
-        </div>
-      </div>
-
-      {/* PDF Preview */}
-      <div className="space-y-3 mb-6">
-        <div className="flex items-center justify-between">
-          <h4 className="text-lg font-medium text-slate-700">LaTeX PDF Preview</h4>
-          {pdfLoading && (
-            <span className="text-sm text-amber-600">Generating preview...</span>
-          )}
-        </div>
-        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
-          {pdfUrl ? (
-            <iframe
-              src={pdfUrl}
-              className="w-full h-[600px]"
-              title="Note PDF Preview"
-              loading="lazy"
-            />
-          ) : (
-            <div className="p-6 text-center text-slate-500 text-sm">
-              {pdfLoading
-                ? 'Compiling LaTeX and generating PDF preview...'
-                : pdfError
-                  ? `Preview unavailable: ${pdfError}`
-                  : 'PDF preview will appear here once generated.'}
-            </div>
-          )}
         </div>
       </div>
 

@@ -1,0 +1,268 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage[margin=1in]{geometry}
+\usepackage{mathptmx}
+
+\title{Note 35}
+\author{8oWLKYWOOJZvjnB4nHxnwhj1wYj2}
+\date{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Note 35}
+\fancyhead[R]{\thepage}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+This document presents a series of probability theory problems, focusing on various aspects of probability density functions, joint distributions, and covariance. Each problem challenges the reader to apply their understanding of random variables and their relationships, providing a solid exercise for those studying advanced probability concepts.
+
+\section{Problems}
+
+\subsection{Problem 1: Conditional Probability Density Functions}
+
+Given the data from Problems 2, Question 2, we explore the conditional relationships between two random variables, \(X\) and \(Y\).
+
+\begin{enumerate}
+    \item \textbf{Find the conditional probability density function of \(X\) given \(Y\)}:
+    \begin{itemize}
+        \item \textit{Definition}: The conditional probability density function \(f_{X|Y}(x|y)\) is defined as:
+        \[
+        f_{X|Y}(x|y) = \frac{f_{X,Y}(x,y)}{f_Y(y)}
+        \]
+        \item \textit{Steps}:
+        \begin{enumerate}
+            \item Calculate the joint probability density function \(f_{X,Y}(x,y)\).
+            \item Determine the marginal probability density function \(f_Y(y)\).
+            \item Substitute into the formula.
+        \end{enumerate}
+    \end{itemize}
+
+    \item \textbf{Find the conditional probability density function of \(Y\) given \(X\)}:
+    \begin{itemize}
+        \item \textit{Definition}: The conditional probability density function \(f_{Y|X}(y|x)\) is similarly defined as:
+        \[
+        f_{Y|X}(y|x) = \frac{f_{X,Y}(x,y)}{f_X(x)}
+        \]
+        \item \textit{Steps}:
+        \begin{enumerate}
+            \item Compute the joint probability density function \(f_{X,Y}(x,y)\).
+            \item Determine the marginal probability density function \(f_X(x)\).
+            \item Substitute the values into the formula.
+        \end{enumerate}
+    \end{itemize}
+
+    \item \textbf{Find \(P(X + Y > 3 | X = 1)\)}:
+    \begin{itemize}
+        \item \textit{Method}:
+        \begin{enumerate}
+            \item Use the conditional probability formula:
+            \[
+            P(X + Y > 3 | X = 1) = P(Y > 2 | X = 1)
+            \]
+            \item Calculate this probability accordingly based on the conditional density of \(Y\).
+        \end{enumerate}
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Problem 2: Lifetime Model of Electrical Components}
+
+In this problem, we examine the lifetime of electrical components modeled by two random variables: quality factor \(Q\) and lifetime \(T\).
+
+\begin{enumerate}
+    \item \textbf{Model Description}:
+    \begin{itemize}
+        \item Each component has a quality factor \(q\) and a lifetime \(t\).
+        \item \(Q\) follows an exponential distribution: 
+        \[
+        Q \sim \text{Exp}(\lambda), \quad \lambda > 0
+        \]
+        \item The lifetime given quality \(q\) is represented as:
+        \[
+        T | (Q = q) \sim \text{Exp}(q)
+        \]
+    \end{itemize}
+
+    \item \textbf{Joint Probability Density Function}:
+    \begin{itemize}
+        \item Find the joint distribution \(f_{T,Q}(t,q)\):
+        \[
+        f_{T,Q}(t,q) = f_{T|Q}(t|q) \cdot f_Q(q)
+        \]
+        \item Substitute the relevant exponential density functions.
+    \end{itemize}
+
+    \item \textbf{Marginal Probability Density Function of \(T\)}:
+    \begin{itemize}
+        \item To find \(f_T(t)\), integrate over all possible values of \(Q\):
+        \[
+        f_T(t) = \int_0^\infty f_{T,Q}(t,q) \, dq
+        \]
+        \item This results in a probability density function that depends on \(\lambda\).
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Problem 3: Independent Exponential Variables}
+
+Let \(X\) and \(Y\) be independent exponential random variables with the same distribution, \(X \sim \text{Exp}(\lambda)\) and \(Y \sim \text{Exp}(\lambda)\).
+
+\begin{enumerate}
+    \item \textbf{Determine the Range of \((U, V)\)}:
+    \begin{itemize}
+        \item Define \(U\) and \(V\) as follows:
+        \begin{itemize}
+            \item \(U = \frac{X}{X + Y}\)
+            \item \(V = X + Y\)
+        \end{itemize}
+        \item \textit{Sketching the Diagram}: \(U\) ranges from 0 to 1, while \(V\) spans from 0 to \(\infty\).
+    \end{itemize}
+
+    \item \textbf{Joint Probability Density Function of \((U, V)\)}:
+    \begin{itemize}
+        \item Find \(f_{U,V}(u,v)\) using transformation techniques.
+    \end{itemize}
+
+    \item \textbf{Prove \(U\) has a Uniform Distribution on \((0, 1)\)}:
+    \begin{itemize}
+        \item Show that:
+        \[
+        P(U \leq u) = u \quad \text{for } u \in (0, 1)
+        \]
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Problem 4: Joint Distribution of Normal Variables}
+
+Consider two independent random variables \(X\) and \(Y\) that each follow a standard normal distribution, denoted as \(X \sim N(0, 1)\) and \(Y \sim N(0, 1)\).
+
+\begin{enumerate}
+    \item \textbf{Define \(U\) and \(V\)}:
+    \begin{itemize}
+        \item Let:
+        \begin{itemize}
+            \item \(U = X\)
+            \item \(V = \rho X + \sqrt{1 - \rho^2} Y\), where \(|\rho| < 1\).
+        \end{itemize}
+    \end{itemize}
+
+    \item \textbf{Find the Joint Probability Density Function of \((U, V)\)}:
+    \begin{itemize}
+        \item Use the properties of normal distributions to derive this function.
+    \end{itemize}
+
+    \item \textbf{Prove the Covariance}:
+    \begin{itemize}
+        \item Show that:
+        \[
+        \text{Cov}(U, V) = \rho
+        \]
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Problem 5: Bivariate Transformation Method}
+
+Given independent random variables \(X\) and \(Y\), with \(Z = X + Y\), we apply the bivariate transformation method to demonstrate a fundamental theorem in probability.
+
+\begin{enumerate}
+    \item \textbf{Define \(W\)}:
+    \begin{itemize}
+        \item Let \(W = X\).
+    \end{itemize}
+
+    \item \textbf{Prove the Distribution}:
+    \begin{itemize}
+        \item Show that:
+        \[
+        f_Z(z) = \int_{-\infty}^{\infty} f_X(x) f_Y(z - x) \, dx
+        \]
+        \item This provides an alternative proof of the convolution theorem.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Problem 6: Bivariate Random Variable}
+
+Consider the discrete bivariate random variable \((X, Y)\) with a given joint probability mass function. 
+
+\begin{enumerate}
+    \item \textbf{Determine Independence}:
+    \begin{itemize}
+        \item \textit{Question}: Are \(X\) and \(Y\) independent?
+        \item \textit{Method}: Check if \(P(X, Y) = P(X)P(Y)\).
+    \end{itemize}
+
+    \item \textbf{Find Covariance}:
+    \begin{itemize}
+        \item Calculate \(\text{Cov}(X, Y)\).
+    \end{itemize}
+
+    \item \textbf{Calculate Correlation}:
+    \begin{itemize}
+        \item Determine the correlation coefficient \(\rho_{X,Y}\).
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Problem 7: Joint Density Function Analysis}
+
+Let \((X, Y)\) have the joint density function defined by:
+\[
+f_{X,Y}(x,y) = 
+\begin{cases}
+1 & \text{if } y > 0, x + y < 1 \text{ and } y < x + 1 \\
+0 & \text{otherwise}
+\end{cases}
+\]
+
+\begin{enumerate}
+    \item \textbf{Find Covariance}:
+    \begin{itemize}
+        \item Calculate \(\text{Cov}(X, Y)\).
+    \end{itemize}
+
+    \item \textbf{Independence Check}:
+    \begin{itemize}
+        \item Prove that \(X\) and \(Y\) are not independent.
+    \end{itemize}
+
+    \item \textbf{Significance Commentary}:
+    \begin{itemize}
+        \item Discuss the implications of their dependency.
+    \end{itemize}
+
+    \item \textbf{Covariance of Squares}:
+    \begin{itemize}
+        \item Calculate \(\text{Cov}(X^2, Y^2)\) and provide another proof of their dependence.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Problem 8: Covariance Definition}
+
+Prove that:
+\[
+\text{Cov}(X, Y) = E[XY] - E[X]E[Y]
+\]
+using the definition of covariance presented in lectures.
+
+\section{Conclusion}
+
+This document has explored various complex problems in probability theory, requiring detailed calculations and a robust understanding of statistical principles. Each problem not only tests theoretical knowledge but also applies practical techniques for solving real-world problems involving random variables and their interactions.
+
+\section{References}
+
+\begin{itemize}
+    \item Introduction to Probability Theory
+    \item Advanced Statistical Methods
+    \item Joint Probability Distribution Literature
+\end{itemize}
+
+\end{document}
