@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import math
 from collections import defaultdict
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
@@ -26,6 +27,7 @@ class ProcessingSettings:
         flashcard_topics: Optional[List[str]] = None,
         flashcard_count: int = 0,
         max_flashcards_per_topic: int = 4,
+        min_flashcards_per_topic: int = 1,
         project_name: Optional[str] = None,
         latex_title: Optional[str] = None,
         include_nickname: bool = False,
@@ -42,7 +44,13 @@ class ProcessingSettings:
         self.generate_flashcards = generate_flashcards
         self.flashcard_topics = flashcard_topics or []
         self.flashcard_count = flashcard_count
-        self.max_flashcards_per_topic = max(1, max_flashcards_per_topic or 4)
+        resolved_min = (
+            min_flashcards_per_topic
+            if min_flashcards_per_topic is not None
+            else max_flashcards_per_topic
+        )
+        self.min_flashcards_per_topic = max(1, resolved_min or 1)
+        self.max_flashcards_per_topic = max(1, max_flashcards_per_topic or self.min_flashcards_per_topic)
         self.project_name = project_name
         self.latex_title = latex_title
         self.include_nickname = include_nickname
@@ -486,7 +494,7 @@ Please provide the enhanced, beautifully formatted version:"""
         text: str,
         topics: List[str],
         total_cards: int,
-        max_per_topic: int = 4
+        min_per_topic: int = 1
     ) -> List[Dict[str, str]]:
         """Generate flashcards constrained to the provided notes."""
         cleaned_text = (text or "").strip()
@@ -500,24 +508,26 @@ Please provide the enhanced, beautifully formatted version:"""
         if not prepared_topics:
             return []
 
-        max_cards = min(50, max(total_cards, len(prepared_topics)))
-        per_topic_limit = max(1, max_per_topic)
+        per_topic_min = max(1, min_per_topic)
+        target_total = min(50, max(total_cards, len(prepared_topics) * per_topic_min))
+        soft_cap = max(per_topic_min, min(8, math.ceil(target_total / len(prepared_topics)) + 1))
 
         prompt = f"""
-You are an academic studying coach that prepares concise study flashcards strictly from provided notes.
+You are an elite academic study coach that writes refined flashcards using only the student's notes.
 
 NOTES:
 {text}
 
-TOPICS TO COVER: {", ".join(prepared_topics)}
+TOPICS TO COVER (IN ORDER): {", ".join(prepared_topics)}
 
 REQUIREMENTS:
-- Use ONLY the information found in the notes above. Do not invent facts.
-- Provide at most {per_topic_limit} flashcards per topic and no more than {max_cards} flashcards total.
-- Definitions must be full sentences with proper punctuation and must not exceed 50 words.
-- Format the response as valid JSON: a list where each item contains "topic", "term", and "definition".
-- If the notes lack enough information for a topic, skip that topic gracefully.
-- The definition text should help a student recall the {per_topic_limit <= 2 and "term" or "term/concept"}.
+- Use ONLY the information found in the notes above. Never invent facts.
+- Provide at least {per_topic_min} flashcards for each topic when sufficient evidence exists and never exceed {soft_cap} cards for a topic.
+- Generate no more than {target_total} flashcards total.
+- Respond with valid JSON: a list where each item has "topic", "term", and "definition" keys.
+- Write definitions in your own words. Start with a direct answer, then add the single most memorable detail from the notes. Keep definitions between 25 and 45 words.
+- Avoid copying sentences verbatim, quoting the prompt, or repeating the term inside the definition.
+- If the notes lack enough information for a topic, omit that topic entirely.
 """
 
         try:
@@ -526,18 +536,57 @@ REQUIREMENTS:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You create flashcards using only the supplied notes and respond in JSON."
+                        "content": "You create polished flashcards using only the supplied notes and must respond in raw JSON."
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                temperature=0.4,
-                max_tokens=1200
+                temperature=0.35,
+                max_tokens=1500
             )
             raw = response.choices[0].message.content.strip()
-            return self._parse_flashcard_response(raw, max_cards, per_topic_limit)
+            cards = self._parse_flashcard_response(
+                raw,
+                total_cards=target_total,
+                per_topic_limit=soft_cap,
+                allowed_topics=prepared_topics
+            )
+
+            cards_by_topic: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+            seen_pairs = set()
+            unique_cards: List[Dict[str, str]] = []
+            for card in cards:
+                key = (card["topic"].lower(), card["term"].lower())
+                if key in seen_pairs:
+                    continue
+                seen_pairs.add(key)
+                cards_by_topic[card["topic"]].append(card)
+                unique_cards.append(card)
+            cards = unique_cards
+
+            for topic in prepared_topics:
+                deficit = per_topic_min - len(cards_by_topic.get(topic, []))
+                if deficit <= 0:
+                    continue
+                extras = await self._generate_topic_flashcards(
+                    cleaned_text,
+                    topic,
+                    deficit
+                )
+                for extra in extras:
+                    key = (extra["topic"].lower(), extra["term"].lower())
+                    if key in seen_pairs:
+                        continue
+                    cards.append(extra)
+                    cards_by_topic[topic].append(extra)
+                    seen_pairs.add(key)
+                    deficit -= 1
+                    if deficit <= 0:
+                        break
+
+            return self._rebalance_cards(cards, prepared_topics, target_total, per_topic_min)
         except Exception as e:
             print(f"Flashcard generation failed: {e}")
             return []
@@ -546,7 +595,8 @@ REQUIREMENTS:
         self,
         raw_response: str,
         total_cards: int,
-        per_topic_limit: int
+        per_topic_limit: int,
+        allowed_topics: List[str]
     ) -> List[Dict[str, str]]:
         try:
             cleaned = raw_response.strip()
@@ -562,6 +612,7 @@ REQUIREMENTS:
 
         cards: List[Dict[str, str]] = []
         topic_counts = defaultdict(int)
+        allowed_lookup = {topic.lower(): topic for topic in allowed_topics}
 
         for entry in parsed if isinstance(parsed, list) else []:
             topic = str(entry.get("topic", "")).strip()
@@ -571,7 +622,11 @@ REQUIREMENTS:
             if not topic or not term or not definition:
                 continue
 
-            if topic_counts[topic] >= per_topic_limit:
+            canonical_topic = allowed_lookup.get(topic.lower())
+            if not canonical_topic:
+                continue
+
+            if topic_counts[canonical_topic] >= per_topic_limit:
                 continue
 
             limited_definition = self._limit_definition(definition)
@@ -579,24 +634,111 @@ REQUIREMENTS:
                 continue
 
             cards.append({
-                "topic": topic,
+                "topic": canonical_topic,
                 "term": term,
                 "definition": limited_definition
             })
-            topic_counts[topic] += 1
+            topic_counts[canonical_topic] += 1
 
             if len(cards) >= total_cards:
                 break
 
         return cards
 
+    async def _generate_topic_flashcards(
+        self,
+        text: str,
+        topic: str,
+        count: int
+    ) -> List[Dict[str, str]]:
+        if not self.client:
+            return []
+
+        count = max(1, count)
+        prompt = f"""
+Create exactly {count} high-quality flashcards for the topic "{topic}" using ONLY the following notes. If the notes lack support, return an empty JSON list.
+
+NOTES:
+{text}
+
+INSTRUCTIONS:
+- Respond with JSON (list of objects with "topic", "term", "definition").
+- Rephrase everything in your own words and keep definitions between 25 and 45 words.
+- Highlight memorable cues or cause/effect details from the notes when possible.
+"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You create concise flashcards using only the provided material and respond strictly in JSON."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=600
+            )
+            raw = response.choices[0].message.content.strip()
+            return self._parse_flashcard_response(
+                raw,
+                total_cards=count,
+                per_topic_limit=count,
+                allowed_topics=[topic]
+            )
+        except Exception as e:
+            print(f"Topic-specific flashcard generation failed for {topic}: {e}")
+            return []
+
+    def _rebalance_cards(
+        self,
+        cards: List[Dict[str, str]],
+        topics: List[str],
+        total_limit: int,
+        min_per_topic: int
+    ) -> List[Dict[str, str]]:
+        if not cards:
+            return []
+
+        topic_order = {topic: idx for idx, topic in enumerate(topics)}
+        filtered = [card for card in cards if card.get("topic") in topic_order]
+        filtered.sort(key=lambda c: (topic_order[c["topic"]], c["term"].lower()))
+
+        if len(filtered) <= total_limit:
+            return filtered
+
+        guaranteed: List[Dict[str, str]] = []
+        used_indexes = set()
+        counts = defaultdict(int)
+
+        for idx, card in enumerate(filtered):
+            topic = card["topic"]
+            if counts[topic] < min_per_topic:
+                guaranteed.append(card)
+                counts[topic] += 1
+                used_indexes.add(idx)
+
+        remaining_slots = total_limit - len(guaranteed)
+        if remaining_slots <= 0:
+            return guaranteed[:total_limit]
+
+        for idx, card in enumerate(filtered):
+            if idx in used_indexes:
+                continue
+            if len(guaranteed) >= total_limit:
+                break
+            guaranteed.append(card)
+
+        return guaranteed[:total_limit]
+
     def _limit_definition(self, definition: str) -> str:
         words = definition.split()
         if not words:
             return ""
-        if len(words) <= 50:
+        if len(words) <= 45:
             return " ".join(words)
-        trimmed = " ".join(words[:50]).rstrip(",;:")
+        trimmed = " ".join(words[:45]).rstrip(",;:")
         if not trimmed.endswith((".", "?", "!")):
             trimmed += "."
         return trimmed

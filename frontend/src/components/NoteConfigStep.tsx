@@ -27,16 +27,26 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
   const [flashcardTopicInput, setFlashcardTopicInput] = useState('');
   const lastTopicSeedRef = useRef<string | null>(null);
 
-  const handleConfigChange = (key: keyof ProcessingConfig, value: boolean | string | string[]) => {
+  const updateConfig = (partial: Partial<ProcessingConfig>) => {
     onConfigChange({
       ...config,
-      [key]: value,
+      ...partial,
     });
+  };
+
+  const handleConfigChange = (key: keyof ProcessingConfig, value: boolean | string | number | string[]) => {
+    updateConfig({ [key]: value } as Partial<ProcessingConfig>);
   };
 
   const hasProcessingOption = config.add_bullet_points || config.add_headers || config.expand || config.summarize;
   const flashcardTopics = config.flashcard_topics || [];
   const flashcardEnabled = !!config.generate_flashcards;
+  const minPerTopicSetting = config.min_flashcards_per_topic ?? config.max_flashcards_per_topic ?? 2;
+  const minPerTopic = Math.max(1, minPerTopicSetting);
+  const flashcardTopicCount = Math.max(1, flashcardTopics.length || 1);
+  const minTotalRequired = Math.min(50, flashcardTopicCount * minPerTopic);
+  const totalFlashcards = Math.min(50, Math.max(minTotalRequired, config.flashcard_count || 0));
+  const sliderMin = Math.min(50, Math.max(minPerTopic, minTotalRequired));
 
   const fetchTopicSuggestions = async (sourceText: string = noteText) => {
     if (!sourceText || sourceText.length < 50) {
@@ -111,27 +121,62 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
     const trimmed = flashcardTopicInput.trim();
     if (!trimmed) return;
     if (!flashcardTopics.includes(trimmed)) {
-      handleConfigChange('flashcard_topics', [...flashcardTopics, trimmed]);
+      const updatedTopics = [...flashcardTopics, trimmed];
+      updateConfig({
+        flashcard_topics: updatedTopics,
+        flashcard_count: Math.min(
+          50,
+          Math.max(
+            Math.max(1, updatedTopics.length) * minPerTopic,
+            config.flashcard_count || 0
+          )
+        ),
+      });
     }
     setFlashcardTopicInput('');
   };
 
   const removeFlashcardTopic = (topic: string) => {
-    handleConfigChange('flashcard_topics', flashcardTopics.filter(t => t !== topic));
+    const updatedTopics = flashcardTopics.filter(t => t !== topic);
+    updateConfig({ flashcard_topics: updatedTopics });
   };
 
   const copyTopicsToFlashcards = (topics: string[]) => {
     const unique = Array.from(new Set([...flashcardTopics, ...topics]));
-    handleConfigChange('flashcard_topics', unique);
-    if ((config.flashcard_count || 0) < unique.length) {
-      handleConfigChange('flashcard_count', unique.length);
+    if (unique.length === 0) {
+      return;
     }
+    const required = Math.min(50, Math.max(1, unique.length) * minPerTopic);
+    const current = config.flashcard_count || required;
+    updateConfig({
+      flashcard_topics: unique,
+      flashcard_count: Math.min(50, Math.max(required, current)),
+    });
   };
 
   const handleFlashcardCountChange = (value: number) => {
-    const clamped = Math.max(flashcardTopics.length || 1, Math.min(50, value));
-    handleConfigChange('flashcard_count', clamped);
+    const clamped = Math.min(50, Math.max(sliderMin, value));
+    updateConfig({ flashcard_count: clamped });
   };
+
+  const handleMinPerTopicChange = (value: number) => {
+    const normalized = Math.max(1, Math.min(6, value));
+    const required = Math.min(50, Math.max(1, (flashcardTopics.length || 1)) * normalized);
+    const current = config.flashcard_count || required;
+    updateConfig({
+      min_flashcards_per_topic: normalized,
+      flashcard_count: Math.min(50, Math.max(required, current)),
+    });
+  };
+
+  useEffect(() => {
+    if (!flashcardEnabled) {
+      return;
+    }
+    if (!config.flashcard_count || config.flashcard_count < minTotalRequired) {
+      updateConfig({ flashcard_count: minTotalRequired });
+    }
+  }, [flashcardEnabled, flashcardTopics.length, minPerTopic, minTotalRequired]);
 
   return (
     <div className="w-full mx-auto bg-white/80 backdrop-blur-sm border-orange-200/50 border rounded-xl shadow-lg p-6">
@@ -147,9 +192,21 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
         </p>
       </div>
       
-      <div className="space-y-8">
-        {/* Content Focus Section */}
-        <div className="space-y-4">
+      {isProcessing && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <p className="font-medium">Enhancement in progress — settings are locked to preserve consistency.</p>
+          {flashcardEnabled && (
+            <p className="text-xs text-amber-700 mt-1">
+              Flashcards fixed at {totalFlashcards} total with a minimum of {minPerTopic} per topic.
+            </p>
+          )}
+        </div>
+      )}
+
+      <fieldset disabled={isProcessing} className={`${isProcessing ? 'opacity-90' : ''}`}>
+        <div className="space-y-8">
+          {/* Content Focus Section */}
+          <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -166,7 +223,7 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
             </div>
             {noteText && noteText.length >= 50 && !suggestedTopics.length && !loadingTopics && !topicError && (
               <button
-                onClick={fetchTopicSuggestions}
+                onClick={() => fetchTopicSuggestions()}
                 disabled={loadingTopics}
                 className="text-sm px-4 py-2 bg-indigo-600 text-white border border-indigo-700 rounded-lg hover:bg-indigo-700 transition-colors font-medium shadow-sm"
               >
@@ -294,7 +351,8 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
               Add custom topic
             </button>
           )}
-        
+        </div>
+
         {/* Custom Specifications */}
         <div className="space-y-2 border-t border-dashed pt-4 mt-6">
           <div className="flex items-center justify-between">
@@ -368,7 +426,6 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
             </div>
           </div>
         </div>
-      </div>
 
         {/* Flashcard Generation Section */}
         <div className="space-y-4 border-t pt-6">
@@ -381,7 +438,7 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
                 Flashcard Generation
               </h3>
               <p className="text-sm text-gray-600">
-                AI builds up to 50 double-sided cards directly from your notes. You can add extra topics or cards manually later.
+                AI rewrites each definition in ≤ 45 words, highlighting memorable cues per topic.
               </p>
             </div>
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -391,25 +448,27 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
                 className="h-5 w-5 text-emerald-600 rounded border-emerald-300 focus:ring-emerald-500"
                 checked={flashcardEnabled}
                 onChange={(e) => {
-                  handleConfigChange('generate_flashcards', e.target.checked);
-                  if (e.target.checked) {
-                    const preferred = Math.max(4, flashcardTopics.length || 1);
-                    if (!config.flashcard_count || config.flashcard_count < preferred) {
-                      handleConfigChange('flashcard_count', preferred);
-                    }
+                  const enabled = e.target.checked;
+                  if (!enabled) {
+                    updateConfig({ generate_flashcards: false });
+                    return;
                   }
+                  const requiredTotal = Math.min(50, flashcardTopicCount * minPerTopic);
+                  updateConfig({
+                    generate_flashcards: true,
+                    min_flashcards_per_topic: minPerTopic,
+                    flashcard_count: Math.max(requiredTotal, totalFlashcards || requiredTotal),
+                  });
                 }}
               />
             </label>
           </div>
 
-          {!flashcardEnabled && (
+          {!flashcardEnabled ? (
             <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
-              Enable flashcards to have AI summarize each topic with concise definitions (≤ 50 words) pulled directly from your text.
+              Enable flashcards to receive balanced decks with paraphrased definitions for each topic you select.
             </div>
-          )}
-
-          {flashcardEnabled && (
+          ) : (
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2">
                 <button
@@ -473,41 +532,47 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">
-                    Total flashcards (min topics, max 50)
-                  </label>
-                  <input
-                    type="number"
-                    min={Math.max(1, flashcardTopics.length || 1)}
-                    max={50}
-                    value={config.flashcard_count || Math.max(flashcardTopics.length || 1, 4)}
-                    onChange={(e) => handleFlashcardCountChange(Number(e.target.value) || (flashcardTopics.length || 1))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700">
-                    Max flashcards per topic (up to 4)
+                    Total flashcards (max 50)
                   </label>
                   <input
                     type="range"
-                    min={1}
-                    max={4}
-                    value={config.max_flashcards_per_topic || 4}
-                    onChange={(e) => handleConfigChange('max_flashcards_per_topic', Number(e.target.value))}
+                    min={sliderMin}
+                    max={50}
+                    value={totalFlashcards}
+                    onChange={(e) => handleFlashcardCountChange(Number(e.target.value) || sliderMin)}
                     className="w-full accent-emerald-600"
                   />
-                  <p className="text-xs text-gray-500">
-                    Currently {config.max_flashcards_per_topic || 4} per topic
-                  </p>
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>Minimum required: {minTotalRequired}</span>
+                    <span>Selected: {totalFlashcards}</span>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700">
+                    Minimum flashcards per topic
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={1}
+                      max={6}
+                      value={minPerTopic}
+                      onChange={(e) => handleMinPerTopicChange(Number(e.target.value) || 1)}
+                      className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Guarantees every topic gets at least this many cards.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
           )}
-        </div>
+  </div>
 
-        {/* Processing Options Section */}
+  {/* Processing Options Section */}
         <div className="space-y-4 border-t pt-6">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -596,9 +661,9 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
               Please select at least one enhancement option
             </p>
           )}
-        </div>
+  </div>
 
-        {/* Style & Format Section */}
+  {/* Style & Format Section */}
         <div className="space-y-4 border-t pt-6">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -653,6 +718,7 @@ export const NoteConfigStep: React.FC<NoteConfigStepProps> = ({
           </div>
         </div>
       </div>
+      </fieldset>
 
       {/* Action Buttons */}
       <div className="flex justify-between pt-6 border-t mt-6">

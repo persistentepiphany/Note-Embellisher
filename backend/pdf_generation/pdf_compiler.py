@@ -15,20 +15,26 @@ class PDFCompiler:
         base_dir = Path(__file__).resolve().parent.parent  # backend/
         self.output_dir = base_dir / "generated_pdfs"
         self.output_dir.mkdir(exist_ok=True)
-        
-        # Check if pdflatex is available
-        self.has_pdflatex = self._check_pdflatex()
-        
-        if self.has_pdflatex:
-            print("pdflatex found - local compilation available")
+
+        # Check which LaTeX engines are available locally
+        self.has_pdflatex = self._check_engine("pdflatex")
+        self.has_xelatex = self._check_engine("xelatex")
+
+        if self.has_pdflatex or self.has_xelatex:
+            engines = []
+            if self.has_pdflatex:
+                engines.append("pdflatex")
+            if self.has_xelatex:
+                engines.append("xelatex")
+            print(f"Local LaTeX engines detected: {', '.join(engines)}")
         else:
-            print("pdflatex not found - will use cloud compilation")
-    
-    def _check_pdflatex(self) -> bool:
-        """Check if pdflatex is installed"""
+            print("No local LaTeX engines detected - falling back to cloud compilation")
+
+    def _check_engine(self, engine_name: str) -> bool:
+        """Check if a specific LaTeX engine is installed."""
         try:
             result = subprocess.run(
-                ['pdflatex', '--version'],
+                [engine_name, '--version'],
                 capture_output=True,
                 timeout=5
             )
@@ -57,23 +63,47 @@ class PDFCompiler:
             - error_message: Error message if compilation failed (None if success)
         """
         
-        # Try local compilation first if available
-        if self.has_pdflatex:
-            result = self._compile_local(latex_content, output_filename, save_tex)
+        engine = self._detect_engine(latex_content)
+
+        # Try local compilation first if the required engine is available
+        can_run_locally = (
+            (engine == "pdflatex" and self.has_pdflatex) or
+            (engine == "xelatex" and self.has_xelatex)
+        )
+
+        if can_run_locally:
+            result = self._compile_local(latex_content, output_filename, save_tex, engine)
             if result[0]:  # If PDF was successfully generated
                 return result
             print("Local compilation failed, trying cloud compilation...")
+        else:
+            print(f"Local {engine} not available - using cloud compiler")
         
         # Fall back to cloud compilation
-        return self._compile_cloud(latex_content, output_filename, save_tex)
+        return self._compile_cloud(latex_content, output_filename, save_tex, engine)
+
+    def _detect_engine(self, latex_content: str) -> str:
+        """Detect which LaTeX engine is required based on the content."""
+        lowered = latex_content.lower()
+        needs_xelatex = any(
+            token in lowered for token in [
+                "\\usepackage{fontspec",
+                "\\setmainfont",
+                "\\newfontfamily",
+                "\\usepackage{unicode-math",
+                "xelatex"
+            ]
+        )
+        return "xelatex" if needs_xelatex else "pdflatex"
     
     def _compile_local(
         self, 
         latex_content: str, 
         output_filename: str,
-        save_tex: bool
+        save_tex: bool,
+        engine: str
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        """Compile LaTeX locally using pdflatex"""
+        """Compile LaTeX locally using the requested engine."""
         
         with tempfile.TemporaryDirectory() as tmpdir:
             # Write .tex file
@@ -88,7 +118,7 @@ class PDFCompiler:
                 # Run pdflatex twice for references and table of contents
                 for i in range(2):
                     result = subprocess.run(
-                        ['pdflatex', '-interaction=nonstopmode', 'document.tex'],
+                        [engine, '-interaction=nonstopmode', 'document.tex'],
                         cwd=tmpdir,
                         capture_output=True,
                         timeout=60,
@@ -129,7 +159,8 @@ class PDFCompiler:
         self, 
         latex_content: str, 
         output_filename: str,
-        save_tex: bool
+        save_tex: bool,
+        engine: str
     ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """Compile LaTeX using texlive.net multipart API"""
 
@@ -140,7 +171,7 @@ class PDFCompiler:
             }
             data = {
                 'filename[]': 'document.tex',
-                'engine': 'pdflatex',
+                'engine': engine,
                 'return': 'pdf'
             }
 

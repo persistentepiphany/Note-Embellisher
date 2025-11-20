@@ -372,16 +372,21 @@ async def maybe_generate_flashcards_for_note(
         return
 
     desired_count = settings.flashcard_count or len(topics)
-    total_cards = max(len(topics), desired_count)
+    per_topic_min = max(
+        1,
+        getattr(settings, "min_flashcards_per_topic", None)
+        or getattr(settings, "max_flashcards_per_topic", None)
+        or 1
+    )
+    total_cards = max(len(topics) * per_topic_min, desired_count)
     total_cards = min(total_cards, 50)
-    max_per_topic = min(max(1, settings.max_flashcards_per_topic or 4), 4)
 
     try:
         cards = await chatgpt_service.generate_flashcards(
             text=text,
             topics=topics,
             total_cards=total_cards,
-            max_per_topic=max_per_topic
+            min_per_topic=per_topic_min
         )
     except Exception as e:
         print(f"Flashcard generation failed for note {note.id}: {e}")
@@ -462,6 +467,8 @@ def _get_user_note(db: Session, note_id: int, user_id: str) -> "Note":
 
 def update_note_progress(db: Session, note: "Note", progress: int, message: Optional[str] = None, status: Optional[ProcessingStatus] = None) -> None:
     """Persist progress updates for long-running tasks so the UI can render truthful progress."""
+    if getattr(note, "status", None) == ProcessingStatus.CANCELLED and status is None:
+        return
     capped_progress = max(0, min(100, progress))
     note.progress = capped_progress
     if message is not None:
@@ -470,6 +477,17 @@ def update_note_progress(db: Session, note: "Note", progress: int, message: Opti
         note.status = status
     db.commit()
     db.refresh(note)
+
+
+def _refresh_note_and_check_cancelled(db: Session, note: "Note") -> bool:
+    try:
+        db.refresh(note)
+    except Exception:
+        return False
+    if getattr(note, "status", None) == ProcessingStatus.CANCELLED:
+        print(f"Cancellation detected for note {note.id}, aborting background work")
+        return True
+    return False
 
 
 class TopicsFromTextRequest(BaseModel):
@@ -837,6 +855,26 @@ async def delete_flashcard(
     db.commit()
     db.refresh(note)
     return FlashcardList(flashcards=serialize_flashcards(note))
+
+
+@app.post("/notes/{note_id}/cancel", response_model=NoteResponse)
+async def cancel_note_processing(
+    note_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    note = _get_user_note(db, note_id, user["uid"])
+    if note.status in {ProcessingStatus.COMPLETED, ProcessingStatus.CANCELLED}:
+        raise HTTPException(status_code=400, detail="Note processing is already finished")
+    if note.status == ProcessingStatus.ERROR:
+        raise HTTPException(status_code=400, detail="Note failed previously and cannot be cancelled")
+
+    note.status = ProcessingStatus.CANCELLED
+    note.progress = 0
+    note.progress_message = "Processing cancelled by user"
+    db.commit()
+    db.refresh(note)
+    return note_to_response(note)
 
 @app.get("/notes/", response_model=List[NoteResponse])
 async def get_notes(
@@ -1560,19 +1598,27 @@ async def process_note_background(note_id: int, settings):
         
         # Convert settings to ProcessingSettings object
         processing_settings = ensure_processing_settings(settings)
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         update_note_progress(db, db_note, 5, "Starting note enhancement...")
         
         # Process with ChatGPT
         update_note_progress(db, db_note, 25, "Enhancing content with ChatGPT...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         processed_content = await chatgpt_service.process_text_with_chatgpt(
             db_note.text, 
             processing_settings
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Update the note with processed content
         db_note.processed_content = processed_content
         db.commit()
         db.refresh(db_note)
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
 
         await maybe_generate_flashcards_for_note(
             db,
@@ -1580,11 +1626,17 @@ async def process_note_background(note_id: int, settings):
             processed_content,
             processing_settings
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         update_note_progress(db, db_note, 50, "Converting to LaTeX format...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Generate PDF BEFORE marking as complete
         update_note_progress(db, db_note, 70, "Compiling LaTeX PDF...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Run PDF generation in thread pool (CPU-bound operation)
         loop = asyncio.get_event_loop()
@@ -1592,6 +1644,8 @@ async def process_note_background(note_id: int, settings):
             executor,
             lambda: generate_pdf_sync_wrapper(db_note.id, None)
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         if pdf_success:
             # Refresh note to get updated PDF paths
@@ -1607,7 +1661,7 @@ async def process_note_background(note_id: int, settings):
     except Exception as e:
         # Update status to error
         print(f"Error processing note {note_id}: {str(e)}")
-        if db_note:
+        if db_note and getattr(db_note, "status", None) != ProcessingStatus.CANCELLED:
             db_note.status = ProcessingStatus.ERROR
             db_note.progress_message = f"Processing failed: {e}"
             db_note.progress = 0
@@ -1631,6 +1685,8 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         
         print(f"Starting OCR processing for note {note_id}")
         update_note_progress(db, db_note, 10, "Running OCR on uploaded files...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Extract text from image using OCR
         if not OCR_AVAILABLE or ocr_service is None:
@@ -1654,6 +1710,8 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         # Update note with extracted text
         db_note.text = extracted_text
         db.commit()
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         update_note_progress(db, db_note, 45, "Enhancing extracted notes with GPT-4...")
         
@@ -1661,17 +1719,23 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         
         # Convert settings to ProcessingSettings object
         processing_settings = ensure_processing_settings(settings)
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Process with ChatGPT
         processed_content = await chatgpt_service.process_text_with_chatgpt(
             extracted_text, 
             processing_settings
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Update the note with processed content
         db_note.processed_content = processed_content
         db.commit()
         db.refresh(db_note)
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
 
         await maybe_generate_flashcards_for_note(
             db,
@@ -1679,17 +1743,25 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
             processed_content,
             processing_settings
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         update_note_progress(db, db_note, 65, "Converting to LaTeX format...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Generate PDF BEFORE marking as complete
         update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         loop = asyncio.get_event_loop()
         pdf_success = await loop.run_in_executor(
             executor,
             lambda: generate_pdf_sync_wrapper(db_note.id, None)
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         if pdf_success:
             db.refresh(db_note)
@@ -1704,7 +1776,7 @@ async def process_image_note_background(note_id: int, dropbox_path: str, setting
         # Update status to error and provide detailed error message
         error_message = str(e)
         print(f"Error processing image note {note_id}: {error_message}")
-        if db_note:
+        if db_note and getattr(db_note, "status", None) != ProcessingStatus.CANCELLED:
             db_note.status = ProcessingStatus.ERROR
             db_note.progress = 0
             db_note.progress_message = f"Processing failed: {error_message}"
@@ -1741,6 +1813,8 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         
         print(f"Starting GPT-4 Vision processing for note {note_id} with {len(image_urls)} images")
         update_note_progress(db, db_note, 10, "Preparing images for GPT-4 Vision...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Check if ChatGPT service is available
         if not CHATGPT_AVAILABLE or chatgpt_service is None:
@@ -1749,6 +1823,8 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         # Convert settings to ProcessingSettings object
         processing_settings = ensure_processing_settings(settings)
         update_note_progress(db, db_note, 35, "Analyzing handwriting with GPT-4 Vision...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Get the actual Dropbox paths from the note
         # For single images, image_path is a string. For multiple, it's JSON array
@@ -1765,9 +1841,13 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
             processing_settings,
             use_dropbox_path=True  # Flag to indicate these are Dropbox paths
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         print(f"GPT-4 Vision processing completed for note {note_id}")
         update_note_progress(db, db_note, 60, "Converting to LaTeX format...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Update the note with processed content
         # For multi-image notes, we store the enhanced content directly
@@ -1775,6 +1855,8 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         db_note.processed_content = processed_content
         db.commit()
         db.refresh(db_note)
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
 
         await maybe_generate_flashcards_for_note(
             db,
@@ -1782,15 +1864,21 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
             processed_content,
             processing_settings
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         # Generate PDF BEFORE marking as complete
         update_note_progress(db, db_note, 80, "Compiling LaTeX PDF...")
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         loop = asyncio.get_event_loop()
         pdf_success = await loop.run_in_executor(
             executor,
             lambda: generate_pdf_sync_wrapper(db_note.id, None)
         )
+        if _refresh_note_and_check_cancelled(db, db_note):
+            return
         
         if pdf_success:
             db.refresh(db_note)
@@ -1808,7 +1896,7 @@ async def process_multiple_images_background(note_id: int, image_urls: List[str]
         import traceback
         traceback.print_exc()
         
-        if db_note:
+        if db_note and getattr(db_note, "status", None) != ProcessingStatus.CANCELLED:
             db_note.status = ProcessingStatus.ERROR
             db_note.progress = 0
             db_note.progress_message = f"Processing failed: {error_message}"

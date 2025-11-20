@@ -10,6 +10,7 @@ export interface ProcessingConfig {
   generate_flashcards?: boolean;
   flashcard_topics?: string[];
   flashcard_count?: number;
+  min_flashcards_per_topic?: number;
   max_flashcards_per_topic?: number;
   project_name?: string;
   latex_title?: string;
@@ -29,6 +30,7 @@ export const defaultConfig: ProcessingConfig = {
   generate_flashcards: false,
   flashcard_topics: [],
   flashcard_count: 4,
+  min_flashcards_per_topic: 2,
   max_flashcards_per_topic: 4,
   project_name: '',
   latex_title: '',

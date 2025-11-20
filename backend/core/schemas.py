@@ -8,6 +8,7 @@ class ProcessingStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     ERROR = "error"
+    CANCELLED = "cancelled"
 
 class ProcessingSettingsSchema(BaseModel):
     add_bullet_points: bool = False
@@ -22,6 +23,7 @@ class ProcessingSettingsSchema(BaseModel):
     flashcard_topics: List[str] = Field(default_factory=list)
     flashcard_count: int = 0
     max_flashcards_per_topic: int = 4
+    min_flashcards_per_topic: int = 1
     project_name: Optional[str] = None
     latex_title: Optional[str] = None
     include_nickname: bool = False

@@ -50,6 +50,7 @@ export interface ProcessingSettings {
   generate_flashcards?: boolean;
   flashcard_topics?: string[];
   flashcard_count?: number;
+  min_flashcards_per_topic?: number;
   max_flashcards_per_topic?: number;
   project_name?: string;
   latex_title?: string;

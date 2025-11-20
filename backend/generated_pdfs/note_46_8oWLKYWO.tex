@@ -1,0 +1,526 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx, hyperref}
+\usepackage{fancyhdr}
+\usepackage[margin=1in]{geometry}
+\usepackage{mathptmx} % Times New Roman font
+\usepackage{enumitem}
+
+\title{Software Prep Class}
+\author{8oWLKYWOOJZvjnB4nHxnwhj1wYj2}
+\date{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Software Prep Class}
+\fancyhead[R]{\thepage}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\section{Key Concepts in Software Testing: An Academic Perspective}
+
+In the realm of software engineering, understanding the nuances of software testing is pivotal for ensuring robust application performance and reliability. This document delves into fundamental concepts of software testing, including unit testing, code coverage metrics, and both structural and black-box testing methodologies. Each section provides an in-depth exploration of the topic, offering insights and knowledge crucial for both academic and practical applications in software development.
+
+\section{Unit Testing}
+
+\textbf{Definition:} Unit testing refers to the process of validating the smallest testable parts of an application—usually individual functions, methods, or classes—by isolating them from the entire system.
+
+\textbf{Goals:}
+\begin{itemize}
+    \item To confirm that each unit performs as specified.
+    \item To identify bugs in the earliest stages of development.
+\end{itemize}
+
+\textbf{Characteristics:}
+\begin{itemize}
+    \item \textbf{Fast}: Unit tests typically run quickly, promoting frequent execution.
+    \item \textbf{Automated}: They are designed to be run automatically, integrating seamlessly into Continuous Integration (CI) pipelines.
+    \item \textbf{Repeatable}: Tests can be executed multiple times without variation in outcomes.
+    \item \textbf{Isolation}: Dependencies are either mocked, stubbed, or faked, ensuring that tests focus solely on the unit being tested.
+\end{itemize}
+
+\textbf{Academic Relevance:}
+\begin{itemize}
+    \item Unit tests provide a formal mechanism for verifying local correctness.
+    \item They enable regression testing, facilitating the detection of new bugs introduced during code changes.
+    \item Essential for practices such as Test-Driven Development (TDD), they foster confidence in code refactoring.
+\end{itemize}
+
+\section{Code Coverage Metrics}
+
+Code coverage is a metric that indicates the extent to which source code is executed during testing. This section will explore various types of code coverage, elucidating their respective strengths and weaknesses.
+
+\subsection{Line Coverage (Statement Coverage)}
+\begin{itemize}
+    \item \textbf{Definition}: The percentage of executable lines of code that are run during testing.
+    \item \textbf{Formula}: \((\text{Executed Lines} / \text{Total Executable Lines}) \times 100\)
+    \item \textbf{Strengths}: Simple and easy to understand.
+    \item \textbf{Weaknesses}: Fails to capture branch outcomes; executing a line does not mean all potential outcomes have been tested.
+\end{itemize}
+
+\subsection{Branch Coverage (Decision Coverage)}
+\begin{itemize}
+    \item \textbf{Definition}: The percentage of decision outcomes (true/false) for each control structure executed.
+    \item \textbf{Formula}: \((\text{Executed Branches} / \text{Total Branches}) \times 100\)
+    \item \textbf{Strengths}: Detects missing branches and outcomes effectively.
+    \item \textbf{Weaknesses}: Does not guarantee comprehensive testing of complex conditions (e.g., short-circuit evaluations).
+\end{itemize}
+
+\subsection{Condition Coverage}
+\begin{itemize}
+    \item \textbf{Definition}: Evaluates whether each boolean sub-expression within a decision has been tested for both true and false outcomes.
+    \item \textbf{Formula}: \((\text{Executed Conditions} / \text{Total Conditions}) \times 100\)
+    \item \textbf{Strengths}: More thorough than branch coverage for compound conditions.
+    \item \textbf{Weaknesses}: May not require all combinations of conditions to be tested.
+\end{itemize}
+
+\subsection{Condition/Decision Coverage}
+\begin{itemize}
+    \item \textbf{Definition}: A combined requirement that ensures both full branch and full condition coverage.
+    \item \textbf{Strengths}: Provides a more comprehensive view of code coverage.
+    \item \textbf{Weaknesses}: Still weaker than full combinatorial coverage.
+\end{itemize}
+
+\subsection{Modified Condition/Decision Coverage (MC/DC)}
+\begin{itemize}
+    \item \textbf{Definition}: Requires that every condition independently affects the decision outcome at least once.
+    \item \textbf{Academic Context}: Required by the DO-178C avionics standard.
+    \item \textbf{Strengths}: Strong logical coverage with fewer tests than full combinatorial coverage.
+    \item \textbf{Weaknesses}: Complex to compute and may necessitate more tests than branch coverage.
+\end{itemize}
+
+\subsection{Path Coverage}
+\begin{itemize}
+    \item \textbf{Definition}: Measures the percentage of all possible execution paths through the code.
+    \item \textbf{Formula}: \((\text{Executed Paths} / \text{Total Paths}) \times 100\)
+    \item \textbf{Strengths}: Theoretically the strongest coverage metric.
+    \item \textbf{Weaknesses}: Exponential explosion of paths makes it infeasible for complex applications.
+\end{itemize}
+
+\subsection{Function/Call Coverage}
+\begin{itemize}
+    \item \textbf{Definition}: Percentage of functions/methods invoked during testing.
+    \item \textbf{Strengths}: Ensures no completely unused code remains.
+    \item \textbf{Weaknesses}: Very coarse measure of code quality.
+\end{itemize}
+
+\subsection{Mutation Coverage}
+\begin{itemize}
+    \item \textbf{Definition}: Measures the percentage of artificially introduced faults (mutants) detected by the test suite.
+    \item \textbf{Formula}: \((\text{Killed Mutants} / \text{Total Mutants}) \times 100\)
+    \item \textbf{Strengths}: Assesses the quality of the test suite rather than merely code execution.
+    \item \textbf{Weaknesses}: Computationally expensive and resource-intensive.
+\end{itemize}
+
+\textbf{Academic Note}: Achieving 100\% line or branch coverage does not equate to the absence of bugs. It merely indicates that code was executed; it does not confirm that all logical scenarios were tested properly. Thus, coverage metrics serve as necessary but insufficient indicators of software quality.
+
+\section{Structural (White-Box) vs. Black-Box Testing}
+
+Testing methodologies are typically categorized into two main types: structural (white-box) testing, which involves a detailed examination of the internal workings of an application, and black-box testing, which evaluates the system based solely on input and output without any knowledge of the internal code structure. Most real-world applications utilize a hybrid approach known as grey-box testing, which encompasses elements of both methodologies.
+
+\textbf{Key Distinctions:}
+\begin{itemize}
+    \item \textbf{White-Box Testing}:
+    \begin{itemize}
+        \item Focuses on code structure, logic, and the flow of information.
+        \item Requires knowledge of the internal code and is often automated.
+        \item Suitable for unit testing and integration testing.
+    \end{itemize}
+    \item \textbf{Black-Box Testing}:
+    \begin{itemize}
+        \item Concentrates on the functional aspects of the application.
+        \item Testers do not require insight into the code.
+        \item Commonly used in system and acceptance testing.
+    \end{itemize}
+\end{itemize}
+
+\section{Engaging Questions to Assess Your Understanding}
+
+The following questions are designed to challenge your comprehension of the topics discussed. Attempt to answer them without referring to outside resources:
+
+\begin{enumerate}
+    \item What are the primary goals of unit testing, and why is it considered a fundamental practice in software development?
+    \item Describe the differences between line coverage and branch coverage. Why is branch coverage generally considered more informative?
+    \item Explain the concept of modified condition/decision coverage (MC/DC) and its significance in critical systems such as aviation software.
+    \item Discuss how path coverage is theoretically the strongest coverage metric, and elaborate on its practical limitations.
+    \item What is the importance of mutation coverage in assessing the quality of a test suite, and how does it differ from traditional coverage metrics?
+    \item In what scenarios would you prefer black-box testing over white-box testing, and why?
+    \item How do you ensure that unit tests remain effective over time as the codebase evolves?
+    \item What are some common pitfalls associated with achieving high code coverage percentages?
+    \item Discuss the role of automated testing tools, such as pytest, in enhancing unit testing practices.
+    \item How can a strong understanding of code coverage metrics improve the overall quality of the software?
+\end{enumerate}
+
+This document aims to provide an enriched understanding of software testing fundamentals, enhancing both theoretical knowledge and practical application within the field of software engineering. The next section will further delve into advanced testing techniques and tools, building upon the foundation established here.
+
+\section{Comprehensive Guide to Software Testing Fundamentals}
+
+\subsection{Common Testing Libraries and Frameworks}
+
+Understanding various testing libraries and frameworks is crucial for effective software testing. While this section focuses primarily on Python-centric tools, the concepts are universally applicable across different programming languages.
+
+\subsubsection{Knowledge of Internals in Testing Frameworks}
+
+\begin{itemize}
+    \item \textbf{Types of Knowledge Required:}
+    \begin{itemize}
+        \item \textbf{None}: Only the specification/interface is necessary.
+        \item \textbf{Full Access}: Complete understanding of the source code enables deeper insights.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Test Case Design}
+
+Effective test case design is pivotal to ensure thorough testing. It encompasses various strategies:
+
+\begin{itemize}
+    \item \textbf{Functional Requirements:}
+    \begin{itemize}
+        \item \textbf{Equivalence Classes}: Group inputs to reduce the number of test cases.
+        \item \textbf{Boundary Values}: Test the limits of input ranges.
+        \item \textbf{Use-Case Based}: Focus on real-world scenarios to validate functionality.
+    \end{itemize}
+    \item \textbf{Structural Testing:}
+    \begin{itemize}
+        \item \textbf{Code Paths}: Analyze the execution paths within the software.
+        \item \textbf{Branches}: Test decision points in the code.
+        \item \textbf{Data Flows}: Monitor how data moves through the software.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Typical Levels of Testing}
+
+Different levels of testing help ensure that software meets quality standards:
+
+\begin{itemize}
+    \item \textbf{System Testing}
+    \item \textbf{Acceptance Testing}
+    \item \textbf{Integration Testing}
+    \item \textbf{Unit Testing}
+\end{itemize}
+
+\subsubsection{Examples of Testing Approaches}
+
+\begin{itemize}
+    \item \textbf{API Contract Testing}: Verifies that APIs meet the specified contract.
+    \item \textbf{UI Testing}: Ensures the user interface behaves as expected.
+    \item \textbf{Exploratory Testing}: Involves testing without a predefined test case to discover unexpected issues.
+    \item \textbf{Unit Tests}: Focus on individual components with specific coverage goals supported by static analysis techniques.
+\end{itemize}
+
+\subsection{Key Aspects of Testing}
+
+\subsubsection{Black-Box Testing}
+
+\begin{itemize}
+    \item \textbf{Focus}: Testing without knowledge of internal code structure.
+    \item \textbf{Tools:}
+    \begin{itemize}
+        \item \textbf{Python: \texttt{pytest}:}
+        \begin{itemize}
+            \item \textbf{Features:}
+            \begin{itemize}
+                \item Fixtures
+                \item Parameterized tests
+                \item Rich plugins (e.g., \texttt{pytest-cov}, \texttt{pytest-mock})
+                \item Automatic test discovery
+                \item Powerful assertions
+            \end{itemize}
+            \item \textbf{Coverage Tool}: Native integration with \texttt{pytest-cov} utilizing \texttt{coverage.py}.
+        \end{itemize}
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{White-Box (Structural) Testing}
+
+\begin{itemize}
+    \item \textbf{Focus}: Testing with an understanding of the internal workings of the application.
+    \item \textbf{Tools:}
+    \begin{itemize}
+        \item \textbf{Python: \texttt{unittest} (standard library)}
+        \begin{itemize}
+            \item \textbf{Style}: xUnit style with setup/teardown methods and sub-tests.
+        \end{itemize}
+        \item \textbf{Coverage Measurement Tool}: \texttt{coverage.py} for line, branch, and MC/DC coverage.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Advanced Testing Tools}
+
+\begin{itemize}
+    \item \textbf{Python: \texttt{Hypothesis}}
+    \begin{itemize}
+        \item \textbf{Type}: Property-based testing that automatically generates data.
+        \item \textbf{Compatibility}: Works seamlessly with \texttt{pytest}.
+    \end{itemize}
+    \item \textbf{Java: \texttt{JUnit 5} + \texttt{JaCoCo}}
+    \begin{itemize}
+        \item \textbf{Framework Features:}
+        \begin{itemize}
+            \item Mature ecosystem
+            \item Parameterized tests
+        \end{itemize}
+        \item \textbf{Coverage Tool}: \texttt{JaCoCo} for branch/path coverage.
+    \end{itemize}
+\end{itemize}
+
+\section{Other Important Related Concepts}
+
+Understanding related concepts in software testing enhances the overall quality and effectiveness of testing processes. Here are some vital concepts to consider:
+
+\subsection{Mocking, Stubbing, and Faking}
+
+\begin{itemize}
+    \item \textbf{Purpose}: These techniques replace real dependencies to isolate the unit being tested.
+    \item \textbf{Libraries:}
+    \begin{itemize}
+        \item \textbf{Python}: \texttt{unittest.mock}, \texttt{pytest-mock}
+        \item \textbf{Java}: Mockito
+        \item \textbf{JavaScript}: Sinon
+    \end{itemize}
+\end{itemize}
+
+\subsection{Test Doubles (Gerard Meszaros Taxonomy)}
+
+\begin{itemize}
+    \item \textbf{Types of Test Doubles:}
+    \begin{itemize}
+        \item \textbf{Dummy}: Objects passed but never used.
+        \item \textbf{Stub}: Predefined responses to calls.
+        \item \textbf{Spy}: Records information on how a function was called.
+        \item \textbf{Mock}: Predefined expectations for interactions.
+        \item \textbf{Fake}: Works like the real object but is simplified.
+    \end{itemize}
+\end{itemize}
+
+\subsection{Testing Approaches}
+
+\begin{itemize}
+    \item \textbf{Property-Based Testing vs. Example-Based Testing}: Property-based testing generates inputs to validate properties, while example-based testing relies on specific examples to verify functionality.
+    \item \textbf{Regression vs. Progression Testing:}
+    \begin{itemize}
+        \item \textbf{Regression Testing}: Ensures existing functionality remains unaffected after changes.
+        \item \textbf{Progression Testing}: Validates new features and enhancements.
+    \end{itemize}
+\end{itemize}
+
+\subsection{The Test Pyramid (Mike Cohn)}
+
+A visual representation of the relationship between different types of tests:
+
+\begin{enumerate}
+    \item \textbf{Unit Tests}:
+    \begin{itemize}
+        \item Many fast tests covering individual components.
+    \end{itemize}
+    \item \textbf{Integration Tests}:
+    \begin{itemize}
+        \item Fewer tests validating the interaction between components.
+    \end{itemize}
+    \item \textbf{End-to-End/UI Tests}:
+    \begin{itemize}
+        \item Very few tests focusing on user scenarios.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Mutation Testing}
+
+\begin{itemize}
+    \item \textbf{Tools}: \texttt{pytmut}, \texttt{mutmut}, and \texttt{PIT} for Java.
+    \item \textbf{Purpose}: Serves as the academic gold standard for assessing test suite quality by introducing changes in the code to evaluate test robustness.
+\end{itemize}
+
+\subsection{Fuzz Testing}
+
+\begin{itemize}
+    \item \textbf{Tools:}
+    \begin{itemize}
+        \item \textbf{AFL (American Fuzzy Lop)}
+        \item \textbf{Hypothesis}
+        \item \textbf{pythonfuzz}
+    \end{itemize}
+    \item \textbf{Purpose}: Identifies vulnerabilities by inputting random data into the application.
+\end{itemize}
+
+With a solid understanding of these frameworks, concepts, and best practices, software testing can be conducted with greater efficiency and effectiveness, ensuring high-quality software delivery.
+
+\section{Test Your Knowledge: Non-Trivial Questions on Software Testing}
+
+This section aims to challenge your understanding of software testing principles, concepts, and methodologies. Before diving into the questions, take a moment to ponder each question on your own. Please refrain from checking external resources, and focus on your personal insights and experiences. When you're ready, respond with your answers numbered 1–10, and I will provide feedback and explanations for each.
+
+\subsection{Branch Coverage vs. Condition Coverage}
+
+\textbf{Question}: Explain why achieving 100\% branch coverage does not guarantee 100\% condition coverage in a function containing the boolean expression \((A \land B) \lor (C \land \lnot D)\).
+
+\begin{verbatim}
+def complex_logic(A, B, C, D):
+    if (A and B) or (C and not D):
+        return True
+    return False
+\end{verbatim}
+
+\textbf{Minimal Test Suite}:
+\begin{itemize}
+    \item Test Case 1: \texttt{complex\_logic(True, True, False, True)}  \(\rightarrow\) \textbf{Covers}: \((A \land B)\)
+    \item Test Case 2: \texttt{complex\_logic(False, False, True, False)}  \(\rightarrow\) \textbf{Covers}: \((C \land \lnot D)\)
+\end{itemize}
+
+\textbf{Explanation}: While both tests cover all branches of the function (i.e., True and False outcomes), they miss scenarios where both \(A\) and \(B\) are \texttt{False}, while \(C\) and \(D\) values vary, which could reveal potential bugs.
+
+\subsection{Modified Condition/Decision Coverage (MC/DC)}
+
+\textbf{Question}: In MC/DC, every condition must independently affect the outcome.
+
+\textbf{Truth Table for the Expression}:
+\begin{itemize}
+    \item Expression: \(((A \lor B) \land C)\)
+\end{itemize}
+
+\begin{center}
+\begin{tabular}{|c|c|c|c|}
+\hline
+A & B & C & Result \\
+\hline
+0 & 0 & 0 & 0 \\
+0 & 0 & 1 & 0 \\
+0 & 1 & 0 & 0 \\
+0 & 1 & 1 & 0 \\
+1 & 0 & 0 & 0 \\
+1 & 0 & 1 & 1 \\
+1 & 1 & 0 & 0 \\
+1 & 1 & 1 & 1 \\
+\hline
+\end{tabular}
+\end{center}
+
+\textbf{Explanation}: This table provides the smallest set of test cases to fully satisfy MC/DC, ensuring that each condition (A, B, C) influences the result.
+
+\subsection{Stubs vs. Mocks}
+
+\textbf{Question}: Describe the difference between a Stub and a Mock using Gerard Meszaros’ test double taxonomy.
+
+\textbf{Stubs}:
+\begin{itemize}
+    \item \textbf{Definition}: Provide canned answers to calls made during the test, typically used when the actual implementation is not required.
+    \item \textbf{Use Case}: Simulating a database call that always returns a predetermined response.
+\end{itemize}
+
+\textbf{Mocks}:
+\begin{itemize}
+    \item \textbf{Definition}: Objects that record how they were called and can assert certain conditions based on those calls.
+    \item \textbf{Use Case}: Verifying that a method is called exactly once with specific parameters.
+\end{itemize}
+
+\textbf{Scenario of Misuse}:
+\begin{itemize}
+    \item Using a Mock when a Stub would suffice can lead to brittle tests if the implementation changes but the test remains valid.
+\end{itemize}
+
+\subsection{Pytest Fixtures and Execution Time}
+
+\textbf{Question}: Explain a situation where using \texttt{scope="module"} dramatically reduces test suite execution time.
+
+\textbf{Concrete Situation}:
+\begin{itemize}
+    \item If a test suite includes expensive setup routines, such as initializing a database connection or loading large datasets, setting the fixture scope to \texttt{module} allows the fixture to be created once per module instead of once per test, conserving time.
+\end{itemize}
+
+\textbf{Safety}:
+\begin{itemize}
+    \item It remains safe because tests within the same module usually share a common state, minimizing interdependencies that could lead to unpredictable test outcomes.
+\end{itemize}
+
+\subsection{Mutation Testing and Configuration}
+
+\textbf{Question}: Explain why many mutation tools allow configuring the mutant \texttt{if x > 0:} \(\rightarrow\) \texttt{if x >= 0:} to be ignored.
+
+\textbf{Explanation}:
+\begin{itemize}
+    \item Allowing this configuration acknowledges that certain logical expressions might be functionally equivalent in context. This highlights a nuanced relationship between mutation score and actual test quality; a high mutation score does not necessarily indicate comprehensive testing.
+\end{itemize}
+
+\subsection{Achieving 100\% Line Coverage with Exceptions}
+
+\textbf{Question}: Describe how to achieve 100\% line coverage without catching or asserting any exceptions.
+
+\textbf{Explanation}:
+\begin{itemize}
+    \item This can be accomplished by ensuring that all branches in your code, including those that raise exceptions, are invoked during testing. For instance, by designing tests that trigger each logical path while avoiding assertions that check for exceptions.
+\end{itemize}
+
+\textbf{Unit Testing Practice}:
+\begin{itemize}
+    \item Proper practices would involve not just achieving line coverage but understanding and validating the behavior when exceptions are raised, ensuring reliability and robustness.
+\end{itemize}
+
+\subsection{Path Coverage vs. Multiple Condition Coverage (MCC)}
+
+\textbf{Question}: Compare path coverage with MCC regarding theoretical strength and practical feasibility.
+
+\textbf{Path Coverage}:
+\begin{itemize}
+    \item \textbf{Strength}: Comprehensive, as it considers all possible paths through the code.
+    \item \textbf{Feasibility}: Often impractical due to exponential growth in paths with added conditions.
+\end{itemize}
+
+\textbf{MCC}:
+\begin{itemize}
+    \item \textbf{Strength}: Focused on the outcome of each condition rather than every possible path.
+    \item \textbf{Feasibility}: More manageable but may miss certain logical combinations.
+\end{itemize}
+
+\textbf{Worst-Case Scenario}:
+\begin{itemize}
+    \item For three independent \texttt{if} statements:
+    \begin{itemize}
+        \item Path Coverage might require \(2^3 = 8\) test cases.
+        \item MCC requires \(2^3 = 8\) test cases, as each condition can yield two outcomes.
+    \end{itemize}
+\end{itemize}
+
+\subsection{Black-Box Testing Techniques}
+
+\textbf{Question}: For an API endpoint accepting an integer age between 18 and 120, consider boundary value analysis and equivalence partitioning.
+
+\textbf{Distinct Boundary/Equivalence Test Cases}:
+\begin{itemize}
+    \item \textbf{Valid Equivalence Class}:
+    \begin{itemize}
+        \item Test Case 1: \texttt{age = 18} (boundary)
+        \item Test Case 2: \texttt{age = 120} (boundary)
+        \item Test Case 3: \texttt{age = 65} (boundary for discount)
+    \end{itemize}
+    \item \textbf{Invalid Equivalence Class}:
+    \begin{itemize}
+        \item Test Case 4: \texttt{age = 17} (below boundary)
+        \item Test Case 5: \texttt{age = 121} (above boundary)
+    \end{itemize}
+\end{itemize}
+
+\subsection{Property-Based Testing with Hypothesis}
+
+\textbf{Question}: Provide a realistic example of a bug that Hypothesis is likely to find but may be missed by example-based testing.
+
+\textbf{Example}:
+\begin{itemize}
+    \item Hypothesis can generate an extensive range of inputs, including edge cases. For example, if a function processes an integer and is expected to return its square root, Hypothesis might find an issue for negative values, which a developer may overlook when writing specific tests.
+\end{itemize}
+
+\subsection{Analyzing Pull Request Changes}
+
+\textbf{Question}: You review a pull request where branch coverage increased from 72\% to 98\%, but mutation score only increased slightly from 81\% to 83\%.
+
+\textbf{Plausible Explanations}:
+\begin{enumerate}
+    \item \textbf{Redundant Tests}: The added tests might cover branches that do not introduce new scenarios, leading to minimal mutation score improvements.
+    \item \textbf{Insufficient Test Quality}: The new tests may not effectively validate the logic beyond achieving coverage, indicating a lack of robust testing.
+    \item \textbf{Complex Mutants}: Some mutants may be inherently resistant to detection, meaning even with higher coverage, the mutation score remains low.
+\end{enumerate}
+
+Take your time to reflect on each question, write your answers thoughtfully, and return them numbered 1–10 at your convenience. Happy testing!
+
+\end{document}
