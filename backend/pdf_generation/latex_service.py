@@ -225,6 +225,9 @@ FORMATTING INSTRUCTIONS:
 - Include \\tableofcontents if content is substantial (multiple sections)
 - Use proper spacing and paragraph breaks
 - Set margins: \\usepackage[margin=1in]{{geometry}}
+- CRITICAL: Do NOT include \\includegraphics or any image file references
+- CRITICAL: Do NOT reference external files (png, jpg, pdf, etc.)
+- If the content mentions images or diagrams, describe them in text or use TikZ/PGF to create them inline
 
 CONTENT TO CONVERT:
 {content}
