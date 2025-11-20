@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "note-embellisher-new",
     "public": "dist",
     "ignore": [
       "firebase.json",
